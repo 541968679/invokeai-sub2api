@@ -41,7 +41,13 @@ type UpdatePayload = {
   base_url?: string;
 };
 
-export const ExternalProvidersForm = memo(() => {
+type ExternalProvidersFormProps = {
+  installProviderModelsOnSave?: boolean;
+  showFooter?: boolean;
+};
+
+export const ExternalProvidersForm = memo(
+  ({ installProviderModelsOnSave = true, showFooter = false }: ExternalProvidersFormProps) => {
   const { t } = useTranslation();
   const { data, isLoading } = useGetExternalProviderConfigsQuery();
   const { data: starterModels } = useGetStarterModelsQuery();
@@ -74,6 +80,9 @@ export const ExternalProvidersForm = memo(() => {
 
   const handleInstallProviderModels = useCallback(
     (providerId: string) => {
+      if (!installProviderModelsOnSave) {
+        return;
+      }
       const models = externalModelsByProvider.get(providerId);
       if (!models?.length) {
         return;
@@ -81,7 +90,7 @@ export const ExternalProvidersForm = memo(() => {
       const modelsToInstall = models.filter((model) => !getIsInstalled(model)).map(buildModelInstallArg);
       modelsToInstall.forEach((model) => installModel(model));
     },
-    [buildModelInstallArg, externalModelsByProvider, getIsInstalled, installModel]
+    [buildModelInstallArg, externalModelsByProvider, getIsInstalled, installModel, installProviderModelsOnSave]
   );
 
   const sortedProviders = useMemo(() => {
@@ -125,14 +134,15 @@ export const ExternalProvidersForm = memo(() => {
           ))}
         </Flex>
       </ScrollableContent>
-      {tabIndex === 3 && (
+      {(showFooter || tabIndex === 3) && (
         <Text variant="subtext" color="base.400">
           {t('modelManager.externalSetupFooter')}
         </Text>
       )}
     </Flex>
   );
-});
+  }
+);
 
 ExternalProvidersForm.displayName = 'ExternalProvidersForm';
 

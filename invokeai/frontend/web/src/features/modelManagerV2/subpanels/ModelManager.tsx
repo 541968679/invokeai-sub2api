@@ -3,7 +3,7 @@ import { Button, Flex, Heading } from '@invoke-ai/ui-library';
 import { useAppDispatch } from 'app/store/storeHooks';
 import { useIsModelManagerEnabled } from 'features/modelManagerV2/hooks/useIsModelManagerEnabled';
 import { setInstallModelsTabByName } from 'features/modelManagerV2/store/installModelsStore';
-import { setSelectedModelKey } from 'features/modelManagerV2/store/modelManagerV2Slice';
+import { setSelectedModelKey, setSelectedPanel } from 'features/modelManagerV2/store/modelManagerV2Slice';
 import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PiPlusBold } from 'react-icons/pi';
@@ -27,9 +27,13 @@ export const ModelManager = memo(() => {
   const dispatch = useAppDispatch();
   const canManageModels = useIsModelManagerEnabled();
   const handleClickAddModel = useCallback(() => {
-    dispatch(setSelectedModelKey(null));
-    setInstallModelsTabByName('launchpad');
-  }, [dispatch]);
+    if (canManageModels) {
+      dispatch(setSelectedModelKey(null));
+      setInstallModelsTabByName('launchpad');
+      return;
+    }
+    dispatch(setSelectedPanel('externalProviders'));
+  }, [canManageModels, dispatch]);
 
   return (
     <Flex sx={modelManagerSx}>
@@ -39,11 +43,9 @@ export const ModelManager = memo(() => {
         </Heading>
         <Flex gap={2}>
           {canManageModels && <SyncModelsButton />}
-          {canManageModels && (
-            <Button size="sm" colorScheme="invokeYellow" leftIcon={<PiPlusBold />} onClick={handleClickAddModel}>
-              {t('modelManager.addModels')}
-            </Button>
-          )}
+          <Button size="sm" colorScheme="invokeYellow" leftIcon={<PiPlusBold />} onClick={handleClickAddModel}>
+            {t('modelManager.addModels')}
+          </Button>
         </Flex>
       </Flex>
       <Flex flexDir="column" gap={4} w="full" h="full">
