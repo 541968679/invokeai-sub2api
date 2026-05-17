@@ -19,7 +19,6 @@ export type FilterableModelType = z.infer<typeof zFilterableModelType>;
 const zModelManagerState = z.object({
   _version: z.literal(1),
   selectedModelKey: z.string().nullable(),
-  selectedPanel: z.enum(['install', 'externalProviders']).nullable(),
   selectedModelMode: z.enum(['edit', 'view']),
   searchTerm: z.string(),
   filteredModelType: zFilterableModelType.nullable(),
@@ -37,7 +36,6 @@ type ModelManagerState = z.infer<typeof zModelManagerState>;
 const getInitialState = (): ModelManagerState => ({
   _version: 1,
   selectedModelKey: null,
-  selectedPanel: null,
   selectedModelMode: 'view',
   filteredModelType: null,
   searchTerm: '',
@@ -55,12 +53,6 @@ const slice = createSlice({
     setSelectedModelKey: (state, action: PayloadAction<string | null>) => {
       state.selectedModelMode = 'view';
       state.selectedModelKey = action.payload;
-      state.selectedPanel = action.payload === null ? 'install' : null;
-    },
-    setSelectedPanel: (state, action: PayloadAction<'install' | 'externalProviders' | null>) => {
-      state.selectedModelMode = 'view';
-      state.selectedModelKey = null;
-      state.selectedPanel = action.payload;
     },
     setSelectedModelMode: (state, action: PayloadAction<'view' | 'edit'>) => {
       state.selectedModelMode = action.payload;
@@ -105,7 +97,6 @@ export const {
   setSearchTerm,
   setFilteredModelType,
   setSelectedModelMode,
-  setSelectedPanel,
   setScanPath,
   shouldInstallInPlaceChanged,
   modelSelectionChanged,
@@ -125,19 +116,9 @@ export const modelManagerSliceConfig: SliceConfig<typeof slice> = {
       if (!('_version' in state)) {
         state._version = 1;
       }
-      if (!('selectedPanel' in state)) {
-        state.selectedPanel = null;
-      }
       return zModelManagerState.parse(state);
     },
-    persistDenylist: [
-      'selectedModelKey',
-      'selectedPanel',
-      'selectedModelMode',
-      'filteredModelType',
-      'searchTerm',
-      'selectedModelKeys',
-    ],
+    persistDenylist: ['selectedModelKey', 'selectedModelMode', 'filteredModelType', 'searchTerm', 'selectedModelKeys'],
   },
 };
 
@@ -147,7 +128,6 @@ export const createModelManagerSelector = <T>(selector: (state: ModelManagerStat
   createSelector(selectModelManagerV2Slice, selector);
 
 export const selectSelectedModelKey = createModelManagerSelector((modelManager) => modelManager.selectedModelKey);
-export const selectSelectedPanel = createModelManagerSelector((modelManager) => modelManager.selectedPanel);
 export const selectSelectedModelMode = createModelManagerSelector((modelManager) => modelManager.selectedModelMode);
 export const selectSearchTerm = createModelManagerSelector((mm) => mm.searchTerm);
 export const selectFilteredModelType = createModelManagerSelector((mm) => mm.filteredModelType);

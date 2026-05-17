@@ -1,12 +1,12 @@
 import type { SystemStyleObject } from '@invoke-ai/ui-library';
 import { Button, Flex, Heading } from '@invoke-ai/ui-library';
-import { useAppDispatch, useAppSelector } from 'app/store/storeHooks';
+import { useAppDispatch } from 'app/store/storeHooks';
 import { useIsModelManagerEnabled } from 'features/modelManagerV2/hooks/useIsModelManagerEnabled';
 import { setInstallModelsTabByName } from 'features/modelManagerV2/store/installModelsStore';
-import { selectSelectedModelKey, setSelectedModelKey, setSelectedPanel } from 'features/modelManagerV2/store/modelManagerV2Slice';
+import { setSelectedModelKey } from 'features/modelManagerV2/store/modelManagerV2Slice';
 import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PiPlugBold, PiPlusBold } from 'react-icons/pi';
+import { PiPlusBold } from 'react-icons/pi';
 
 import ModelList from './ModelManagerPanel/ModelList';
 import { ModelListNavigation } from './ModelManagerPanel/ModelListNavigation';
@@ -30,10 +30,6 @@ export const ModelManager = memo(() => {
     dispatch(setSelectedModelKey(null));
     setInstallModelsTabByName('launchpad');
   }, [dispatch]);
-  const handleClickExternalProviders = useCallback(() => {
-    dispatch(setSelectedPanel('externalProviders'));
-  }, [dispatch]);
-  const selectedModelKey = useAppSelector(selectSelectedModelKey);
 
   return (
     <Flex sx={modelManagerSx}>
@@ -43,14 +39,11 @@ export const ModelManager = memo(() => {
         </Heading>
         <Flex gap={2}>
           {canManageModels && <SyncModelsButton />}
-          {!!selectedModelKey && canManageModels && (
+          {canManageModels && (
             <Button size="sm" colorScheme="invokeYellow" leftIcon={<PiPlusBold />} onClick={handleClickAddModel}>
               {t('modelManager.addModels')}
             </Button>
           )}
-          <Button size="sm" leftIcon={<PiPlugBold />} onClick={handleClickExternalProviders}>
-            {t('modelManager.externalProviders')}
-          </Button>
         </Flex>
       </Flex>
       <Flex flexDir="column" gap={4} w="full" h="full">
