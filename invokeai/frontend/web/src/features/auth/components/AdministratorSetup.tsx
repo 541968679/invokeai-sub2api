@@ -34,8 +34,8 @@ export const AdministratorSetup = memo(() => {
 
   // Redirect to app if multiuser mode is disabled
   useEffect(() => {
-    if (!isLoadingSetup && setupStatus && !setupStatus.multiuser_enabled) {
-      navigate('/app', { replace: true });
+    if (!isLoadingSetup && setupStatus) {
+      navigate(setupStatus.multiuser_enabled ? '/login' : '/app', { replace: true });
     }
   }, [setupStatus, isLoadingSetup, navigate]);
 
@@ -92,7 +92,7 @@ export const AdministratorSetup = memo(() => {
     : null;
 
   // Show loading spinner while checking setup status or redirecting
-  if (isLoadingSetup || (setupStatus && !setupStatus.multiuser_enabled)) {
+  if (isLoadingSetup || setupStatus) {
     return (
       <Center w="100dvw" h="100dvh">
         <Spinner size="xl" />

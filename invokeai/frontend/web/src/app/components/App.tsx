@@ -4,7 +4,6 @@ import { GlobalHookIsolator } from 'app/components/GlobalHookIsolator';
 import { GlobalModalIsolator } from 'app/components/GlobalModalIsolator';
 import { clearStorage } from 'app/store/enhancers/reduxRemember/driver';
 import Loading from 'common/components/Loading/Loading';
-import { AdministratorSetup } from 'features/auth/components/AdministratorSetup';
 import { LoginPage } from 'features/auth/components/LoginPage';
 import { ProtectedRoute } from 'features/auth/components/ProtectedRoute';
 import { UserManagement } from 'features/auth/components/UserManagement';
@@ -51,8 +50,6 @@ const SetupChecker = () => {
       } else if (isAuthenticated) {
         // In multiuser mode, check authentication
         navigate('/app', { replace: true });
-      } else if (data.setup_required) {
-        navigate('/setup', { replace: true });
       } else {
         navigate('/login', { replace: true });
       }
@@ -84,7 +81,7 @@ const App = () => {
         <Routes>
           <Route path="/" element={<SetupChecker />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/setup" element={<AdministratorSetup />} />
+          <Route path="/setup" element={<LoginPage />} />
           <Route
             path="/profile"
             element={

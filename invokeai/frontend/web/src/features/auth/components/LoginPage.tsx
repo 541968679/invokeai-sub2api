@@ -39,10 +39,10 @@ export const LoginPage = memo(() => {
     }
   }, [setupStatus, isLoadingSetup, navigate]);
 
-  // Redirect to setup page if setup is required
+  // The local PoC uses a built-in administrator, so setup is not exposed.
   useEffect(() => {
     if (!isLoadingSetup && setupStatus?.setup_required) {
-      navigate('/setup', { replace: true });
+      navigate('/login', { replace: true });
     }
   }, [setupStatus, isLoadingSetup, navigate]);
 
