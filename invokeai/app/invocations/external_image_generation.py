@@ -76,6 +76,11 @@ class BaseExternalImageGenerationInvocation(BaseInvocation, WithMetadata, WithBo
             reference_image = context.images.get_pil(image_field.image_name, mode="RGB")
             reference_images.append(ExternalReferenceImage(image=reference_image))
 
+        queue_item = getattr(getattr(context, "_data", None), "queue_item", None)
+        user_id = getattr(queue_item, "user_id", None)
+        if not isinstance(user_id, str):
+            user_id = None
+
         request = ExternalGenerationRequest(
             model=model_config,
             mode=self.mode,
@@ -90,6 +95,7 @@ class BaseExternalImageGenerationInvocation(BaseInvocation, WithMetadata, WithBo
             reference_images=reference_images,
             metadata=self._build_request_metadata(),
             provider_options=self._build_provider_options(),
+            user_id=user_id,
         )
 
         result = context._services.external_generation.generate(request)

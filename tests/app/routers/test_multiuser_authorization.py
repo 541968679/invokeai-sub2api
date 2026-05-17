@@ -77,6 +77,7 @@ def mock_services() -> InvocationServices:
     from invokeai.app.services.images.images_default import ImageService
     from invokeai.app.services.invocation_cache.invocation_cache_memory import MemoryInvocationCache
     from invokeai.app.services.invocation_stats.invocation_stats_default import InvocationStatsService
+    from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfigService
     from invokeai.app.services.users.users_default import UserService
     from tests.test_nodes import TestEventService
 
@@ -105,6 +106,7 @@ def mock_services() -> InvocationServices:
         session_processor=None,  # type: ignore
         session_queue=None,  # type: ignore
         urls=None,  # type: ignore
+        user_external_provider_configs=UserExternalProviderConfigService(db=db),
         workflow_records=SqliteWorkflowRecordsStorage(db=db),
         tensors=None,  # type: ignore
         conditioning=None,  # type: ignore

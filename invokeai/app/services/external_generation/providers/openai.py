@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import io
+from logging import Logger
 
 import requests
 from PIL.Image import Image as PILImageType
 
+from invokeai.app.services.config import InvokeAIAppConfig
 from invokeai.app.services.external_generation.errors import (
     ExternalProviderRateLimitError,
     ExternalProviderRequestError,
@@ -16,6 +18,7 @@ from invokeai.app.services.external_generation.external_generation_common import
     ExternalGenerationResult,
 )
 from invokeai.app.services.external_generation.image_utils import decode_image_base64
+from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfigService
 
 
 class OpenAIProvider(ExternalProvider):
@@ -23,18 +26,39 @@ class OpenAIProvider(ExternalProvider):
 
     _GPT_IMAGE_MODELS = {"gpt-image-1", "gpt-image-1.5", "gpt-image-1-mini"}
 
+    def __init__(
+        self,
+        app_config: InvokeAIAppConfig,
+        logger: Logger,
+        user_external_provider_configs: UserExternalProviderConfigService | None = None,
+    ) -> None:
+        super().__init__(app_config=app_config, logger=logger)
+        self._user_external_provider_configs = user_external_provider_configs
+
     def is_configured(self) -> bool:
+        if self._app_config.multiuser:
+            return self._user_external_provider_configs is not None
         return bool(self._app_config.external_openai_api_key)
 
     def generate(self, request: ExternalGenerationRequest) -> ExternalGenerationResult:
         api_key = self._app_config.external_openai_api_key
+        base_url = self._app_config.external_openai_base_url
+        if self._app_config.multiuser:
+            if self._user_external_provider_configs is None or not request.user_id:
+                raise ExternalProviderRequestError("OpenAI provider is not configured for this user")
+            user_config = self._user_external_provider_configs.get(request.user_id, self.provider_id)
+            api_key = user_config.api_key if user_config else None
+            base_url = user_config.base_url if user_config else None
+
         if not api_key:
+            if self._app_config.multiuser:
+                raise ExternalProviderRequestError("OpenAI provider is not configured for this user")
             raise ExternalProviderRequestError("OpenAI API key is not configured")
 
         model_id = request.model.provider_model_id
         is_gpt_image = model_id in self._GPT_IMAGE_MODELS
         size = f"{request.width}x{request.height}"
-        base_url = (self._app_config.external_openai_base_url or "https://api.openai.com").rstrip("/")
+        base_url = (base_url or "https://api.openai.com").rstrip("/")
         headers = {"Authorization": f"Bearer {api_key}"}
 
         use_edits_endpoint = request.mode != "txt2img" or bool(request.reference_images)

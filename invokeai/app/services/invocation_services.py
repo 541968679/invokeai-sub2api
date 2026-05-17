@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from invokeai.app.services.session_processor.session_processor_base import SessionProcessorBase
     from invokeai.app.services.session_queue.session_queue_base import SessionQueueBase
     from invokeai.app.services.urls.urls_base import UrlServiceBase
+    from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfigService
     from invokeai.app.services.users.users_base import UserServiceBase
     from invokeai.app.services.workflow_records.workflow_records_base import WorkflowRecordsStorageBase
     from invokeai.app.services.workflow_thumbnails.workflow_thumbnails_base import WorkflowThumbnailServiceBase
@@ -71,6 +72,7 @@ class InvocationServices:
         invocation_cache: "InvocationCacheBase",
         names: "NameServiceBase",
         urls: "UrlServiceBase",
+        user_external_provider_configs: "UserExternalProviderConfigService",
         workflow_records: "WorkflowRecordsStorageBase",
         tensors: "ObjectSerializerBase[torch.Tensor]",
         conditioning: "ObjectSerializerBase[ConditioningFieldData]",
@@ -103,6 +105,7 @@ class InvocationServices:
         self.invocation_cache = invocation_cache
         self.names = names
         self.urls = urls
+        self.user_external_provider_configs = user_external_provider_configs
         self.workflow_records = workflow_records
         self.tensors = tensors
         self.conditioning = conditioning

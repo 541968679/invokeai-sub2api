@@ -11,7 +11,7 @@ from fastapi import Body, HTTPException, Path
 from fastapi.routing import APIRouter
 from pydantic import BaseModel, Field, model_validator
 
-from invokeai.app.api.auth_dependencies import AdminUserOrDefault
+from invokeai.app.api.auth_dependencies import AdminUserOrDefault, CurrentUserOrDefault
 from invokeai.app.api.dependencies import ApiDependencies
 from invokeai.app.services.config.config_default import (
     EXTERNAL_PROVIDER_CONFIG_FIELDS,
@@ -23,6 +23,7 @@ from invokeai.app.services.config.config_default import (
     load_external_api_keys,
 )
 from invokeai.app.services.external_generation.external_generation_common import ExternalProviderStatus
+from invokeai.app.services.external_generation.startup import sync_configured_external_starter_models
 from invokeai.app.services.invocation_cache.invocation_cache_common import InvocationCacheStatus
 from invokeai.app.services.model_records.model_records_base import UnknownModelException
 from invokeai.backend.image_util.infill_methods.patchmatch import PatchMatch
@@ -189,8 +190,13 @@ async def get_external_provider_statuses() -> list[ExternalProviderStatusModel]:
     status_code=200,
     response_model=list[ExternalProviderConfigModel],
 )
-async def get_external_provider_configs() -> list[ExternalProviderConfigModel]:
+async def get_external_provider_configs(current_user: CurrentUserOrDefault) -> list[ExternalProviderConfigModel]:
     config = get_config()
+    if _is_multiuser_enabled():
+        return [
+            _build_user_external_provider_config(current_user.user_id, provider_id)
+            for provider_id in EXTERNAL_PROVIDER_FIELDS
+        ]
     return [_build_external_provider_config(provider_id, config) for provider_id in EXTERNAL_PROVIDER_FIELDS]
 
 
@@ -201,6 +207,7 @@ async def get_external_provider_configs() -> list[ExternalProviderConfigModel]:
     response_model=ExternalProviderConfigModel,
 )
 async def set_external_provider_config(
+    current_user: CurrentUserOrDefault,
     provider_id: str = Path(description="The external provider identifier"),
     update: ExternalProviderConfigUpdate = Body(description="External provider configuration settings"),
 ) -> ExternalProviderConfigModel:
@@ -217,6 +224,24 @@ async def set_external_provider_config(
     if not updates:
         raise HTTPException(status_code=400, detail="No external provider config fields provided")
 
+    if _is_multiuser_enabled():
+        existing = ApiDependencies.invoker.services.user_external_provider_configs.get(current_user.user_id, provider_id)
+        api_key = updates.get(api_key_field, existing.api_key if existing else None)
+        base_url = updates.get(base_url_field, existing.base_url if existing else None)
+        saved = ApiDependencies.invoker.services.user_external_provider_configs.set(
+            user_id=current_user.user_id,
+            provider_id=provider_id,
+            api_key=api_key,
+            base_url=base_url,
+        )
+        if saved.api_key:
+            sync_configured_external_starter_models(
+                configured_provider_ids={provider_id},
+                model_manager=ApiDependencies.invoker.services.model_manager,
+                logger=logging.getLogger(__name__),
+            )
+        return _build_user_external_provider_config(current_user.user_id, provider_id)
+
     api_key_removed = update.api_key is not None and updates.get(api_key_field) is None
     _apply_external_provider_update(updates)
     if api_key_removed:
@@ -231,9 +256,14 @@ async def set_external_provider_config(
     response_model=ExternalProviderConfigModel,
 )
 async def reset_external_provider_config(
+    current_user: CurrentUserOrDefault,
     provider_id: str = Path(description="The external provider identifier"),
 ) -> ExternalProviderConfigModel:
     api_key_field, base_url_field = _get_external_provider_fields(provider_id)
+    if _is_multiuser_enabled():
+        ApiDependencies.invoker.services.user_external_provider_configs.delete(current_user.user_id, provider_id)
+        return _build_user_external_provider_config(current_user.user_id, provider_id)
+
     _apply_external_provider_update({api_key_field: None, base_url_field: None})
     _remove_external_models_for_provider(provider_id)
     return _build_external_provider_config(provider_id, get_config())
@@ -312,6 +342,20 @@ def _build_external_provider_config(provider_id: str, config: InvokeAIAppConfig)
         api_key_configured=bool(getattr(config, api_key_field)),
         base_url=getattr(config, base_url_field),
     )
+
+
+def _build_user_external_provider_config(user_id: str, provider_id: str) -> ExternalProviderConfigModel:
+    _get_external_provider_fields(provider_id)
+    config = ApiDependencies.invoker.services.user_external_provider_configs.get(user_id, provider_id)
+    return ExternalProviderConfigModel(
+        provider_id=provider_id,
+        api_key_configured=bool(config.api_key if config else None),
+        base_url=config.base_url if config else None,
+    )
+
+
+def _is_multiuser_enabled() -> bool:
+    return bool(ApiDependencies.invoker.services.configuration.multiuser)
 
 
 def _remove_external_models_for_provider(provider_id: str) -> None:

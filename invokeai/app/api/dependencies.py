@@ -50,6 +50,7 @@ from invokeai.app.services.shared.sqlite.sqlite_util import init_db
 from invokeai.app.services.style_preset_images.style_preset_images_disk import StylePresetImageFileStorageDisk
 from invokeai.app.services.style_preset_records.style_preset_records_sqlite import SqliteStylePresetRecordsStorage
 from invokeai.app.services.urls.urls_default import LocalUrlService
+from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfigService
 from invokeai.app.services.users.users_default import UserService
 from invokeai.app.services.workflow_records.workflow_records_sqlite import SqliteWorkflowRecordsStorage
 from invokeai.app.services.workflow_thumbnails.workflow_thumbnails_disk import WorkflowThumbnailFileStorageDisk
@@ -164,11 +165,16 @@ class ApiDependencies:
             download_queue=download_queue_service,
             events=events,
         )
+        user_external_provider_configs = UserExternalProviderConfigService(db=db)
         external_generation = ExternalGenerationService(
             providers={
                 AlibabaCloudProvider.provider_id: AlibabaCloudProvider(app_config=configuration, logger=logger),
                 GeminiProvider.provider_id: GeminiProvider(app_config=configuration, logger=logger),
-                OpenAIProvider.provider_id: OpenAIProvider(app_config=configuration, logger=logger),
+                OpenAIProvider.provider_id: OpenAIProvider(
+                    app_config=configuration,
+                    logger=logger,
+                    user_external_provider_configs=user_external_provider_configs,
+                ),
                 SeedreamProvider.provider_id: SeedreamProvider(app_config=configuration, logger=logger),
             },
             logger=logger,
@@ -213,6 +219,7 @@ class ApiDependencies:
             session_processor=session_processor,
             session_queue=session_queue,
             urls=urls,
+            user_external_provider_configs=user_external_provider_configs,
             workflow_records=workflow_records,
             tensors=tensors,
             conditioning=conditioning,

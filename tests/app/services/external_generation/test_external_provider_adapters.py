@@ -13,6 +13,7 @@ from invokeai.app.services.external_generation.external_generation_common import
 from invokeai.app.services.external_generation.image_utils import decode_image_base64, encode_image_base64
 from invokeai.app.services.external_generation.providers.gemini import GeminiProvider
 from invokeai.app.services.external_generation.providers.openai import OpenAIProvider
+from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfig
 from invokeai.backend.model_manager.configs.external_api import ExternalApiModelConfig, ExternalModelCapabilities
 
 
@@ -288,6 +289,54 @@ def test_openai_generate_uses_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["url"] == "https://proxy.openai/v1/images/generations"
 
 
+def test_openai_generate_multiuser_uses_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = InvokeAIAppConfig(multiuser=True)
+    user_configs = DummyUserExternalProviderConfigs(
+        {
+            ("user-a", "openai"): UserExternalProviderConfig(
+                user_id="user-a",
+                provider_id="openai",
+                api_key="user-a-key",
+                base_url="https://user-a.openai",
+            )
+        }
+    )
+    provider = OpenAIProvider(config, logging.getLogger("test"), user_external_provider_configs=user_configs)
+    model = _build_model("openai", "gpt-image-1")
+    request = _build_request(model)
+    request = request.__class__(**{**request.__dict__, "user_id": "user-a"})
+    encoded = encode_image_base64(_make_image("purple"))
+    captured: dict[str, object] = {}
+
+    def fake_post(url: str, headers: dict, json: dict, timeout: int) -> DummyResponse:
+        captured["url"] = url
+        captured["headers"] = headers
+        return DummyResponse(ok=True, json_data={"data": [{"b64_json": encoded}]})
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    provider.generate(request)
+
+    assert provider.is_configured()
+    assert captured["url"] == "https://user-a.openai/v1/images/generations"
+    assert captured["headers"]["Authorization"] == "Bearer user-a-key"
+
+
+def test_openai_generate_multiuser_requires_user_config() -> None:
+    config = InvokeAIAppConfig(multiuser=True)
+    provider = OpenAIProvider(
+        config,
+        logging.getLogger("test"),
+        user_external_provider_configs=DummyUserExternalProviderConfigs({}),
+    )
+    model = _build_model("openai", "gpt-image-1")
+    request = _build_request(model)
+    request = request.__class__(**{**request.__dict__, "user_id": "missing-user"})
+
+    with pytest.raises(ExternalProviderRequestError, match="configured for this user"):
+        provider.generate(request)
+
+
 def test_openai_generate_txt2img_error_response(monkeypatch: pytest.MonkeyPatch) -> None:
     config = InvokeAIAppConfig(external_openai_api_key="openai-key")
     provider = OpenAIProvider(config, logging.getLogger("test"))
@@ -301,6 +350,14 @@ def test_openai_generate_txt2img_error_response(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(ExternalProviderRequestError, match="OpenAI request failed"):
         provider.generate(request)
+
+
+class DummyUserExternalProviderConfigs:
+    def __init__(self, configs: dict[tuple[str, str], UserExternalProviderConfig]) -> None:
+        self._configs = configs
+
+    def get(self, user_id: str, provider_id: str) -> UserExternalProviderConfig | None:
+        return self._configs.get((user_id, provider_id))
 
 
 def test_openai_generate_inpaint_uses_edit_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

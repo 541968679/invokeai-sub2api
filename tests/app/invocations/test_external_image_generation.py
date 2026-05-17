@@ -34,6 +34,7 @@ def _build_context(model_config: ExternalApiModelConfig, generated_image: Image.
     context.models.get_config.return_value = model_config
     context.images.get_pil.return_value = generated_image
     context.images.save.return_value = SimpleNamespace(image_name="result.png")
+    context._data.queue_item.user_id = "user-123"
     context._services.external_generation.generate.return_value = ExternalGenerationResult(
         images=[ExternalGeneratedImage(image=generated_image, seed=42)],
         provider_request_id="req-123",
@@ -66,6 +67,7 @@ def test_external_invocation_builds_request_and_outputs() -> None:
     assert request.prompt == "A prompt"
     assert request.seed == 123
     assert len(request.reference_images) == 1
+    assert request.user_id == "user-123"
     assert output.collection[0].image_name == "result.png"
 
 

@@ -28,6 +28,7 @@ class ExternalGenerationRequest:
     reference_images: list[ExternalReferenceImage]
     metadata: dict[str, Any] | None
     provider_options: dict[str, Any] | None = None
+    user_id: str | None = None
 
 
 @dataclass(frozen=True)

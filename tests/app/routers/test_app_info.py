@@ -9,11 +9,12 @@ from fastapi.testclient import TestClient
 from invokeai.app.api.dependencies import ApiDependencies
 from invokeai.app.api.routers import app_info
 from invokeai.app.api_app import app
-from invokeai.app.services.auth.token_service import TokenData
+from invokeai.app.services.auth.token_service import TokenData, create_access_token, set_jwt_secret
 from invokeai.app.services.config.config_default import get_config, load_and_migrate_config, load_external_api_keys
 from invokeai.app.services.external_generation.external_generation_common import ExternalProviderStatus
 from invokeai.app.services.image_files.image_subfolder_strategy import DateStrategy, create_subfolder_strategy
 from invokeai.app.services.invoker import Invoker
+from invokeai.app.services.users.users_common import UserCreateRequest
 from invokeai.backend.model_manager.configs.external_api import ExternalApiModelConfig, ExternalModelCapabilities
 from invokeai.backend.model_manager.taxonomy import BaseModelType, ModelType
 
@@ -178,6 +179,70 @@ def test_set_external_provider_config_clears_provider_models_when_api_key_remove
         model_type=ModelType.ExternalImageGenerator,
     )
     mock_install.delete.assert_called_once_with("openai_model")
+
+
+def test_external_provider_config_is_user_scoped_in_multiuser(
+    monkeypatch: Any, mock_invoker: Invoker, client: TestClient
+) -> None:
+    monkeypatch.setattr("invokeai.app.api.routers.app_info.ApiDependencies", MockApiDependencies(mock_invoker))
+    monkeypatch.setattr("invokeai.app.api.auth_dependencies.ApiDependencies", MockApiDependencies(mock_invoker))
+    monkeypatch.setattr(mock_invoker.services.configuration, "multiuser", True)
+    mock_invoker.services.model_manager = Mock(
+        store=Mock(search_by_attr=Mock(return_value=[])),
+        install=Mock(),
+    )
+    set_jwt_secret("test-secret")
+
+    user_service = mock_invoker.services.users
+    user_a = user_service.create(
+        UserCreateRequest(
+            email="user-a@example.com",
+            display_name="User A",
+            password="TestPass123",
+            is_admin=False,
+        )
+    )
+    user_b = user_service.create(
+        UserCreateRequest(
+            email="user-b@example.com",
+            display_name="User B",
+            password="TestPass123",
+            is_admin=False,
+        )
+    )
+    token_a = create_access_token(TokenData(user_id=user_a.user_id, email=user_a.email, is_admin=False))
+    token_b = create_access_token(TokenData(user_id=user_b.user_id, email=user_b.email, is_admin=False))
+
+    response = client.post(
+        "/api/v1/app/external_providers/config/openai",
+        json={"api_key": "user-a-key", "base_url": "https://user-a.openai"},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider_id": "openai",
+        "api_key_configured": True,
+        "base_url": "https://user-a.openai",
+    }
+
+    response = client.get(
+        "/api/v1/app/external_providers/config",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert response.status_code == 200
+    assert _get_provider_config(response.json(), "openai") == {
+        "provider_id": "openai",
+        "api_key_configured": False,
+        "base_url": None,
+    }
+
+    response = client.delete(
+        "/api/v1/app/external_providers/config/openai",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["api_key_configured"] is False
+    assert not mock_invoker.services.model_manager.install.delete.called
 
 
 def test_update_runtime_config_persists_image_subfolder_strategy(
