@@ -32,7 +32,7 @@ const PROVIDER_SORT_ORDER = ['gemini', 'openai', 'seedream', 'alibabacloud'];
 
 type ProviderCardProps = {
   provider: ExternalProviderConfig;
-  onInstallModels: (providerId: string) => void;
+  onInstallModels?: (providerId: string) => void;
 };
 
 type UpdatePayload = {
@@ -136,6 +136,56 @@ export const ExternalProvidersForm = memo(() => {
 
 ExternalProvidersForm.displayName = 'ExternalProvidersForm';
 
+export const ExternalProvidersSettings = memo(() => {
+  const { t } = useTranslation();
+  const { data, isLoading } = useGetExternalProviderConfigsQuery();
+
+  const sortedProviders = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    return [...data].sort((a, b) => {
+      const aIndex = PROVIDER_SORT_ORDER.indexOf(a.provider_id);
+      const bIndex = PROVIDER_SORT_ORDER.indexOf(b.provider_id);
+      if (aIndex === -1 && bIndex === -1) {
+        return a.provider_id.localeCompare(b.provider_id);
+      }
+      if (aIndex === -1) {
+        return 1;
+      }
+      if (bIndex === -1) {
+        return -1;
+      }
+      return aIndex - bIndex;
+    });
+  }, [data]);
+
+  return (
+    <Flex flexDir="column" height="100%" gap={4}>
+      <Flex flexDir="column" gap={1}>
+        <Heading size="sm">{t('modelManager.externalSetupTitle')}</Heading>
+        <Text color="base.300">{t('modelManager.externalSetupDescription')}</Text>
+      </Flex>
+      <ScrollableContent>
+        <Flex flexDir="column" gap={4}>
+          {isLoading && <Text color="base.300">{t('common.loading')}</Text>}
+          {!isLoading && sortedProviders.length === 0 && (
+            <Text color="base.300">{t('modelManager.externalProvidersUnavailable')}</Text>
+          )}
+          {sortedProviders.map((provider) => (
+            <ProviderCard key={provider.provider_id} provider={provider} />
+          ))}
+        </Flex>
+      </ScrollableContent>
+      <Text variant="subtext" color="base.400">
+        {t('modelManager.externalSetupFooter')}
+      </Text>
+    </Flex>
+  );
+});
+
+ExternalProvidersSettings.displayName = 'ExternalProvidersSettings';
+
 const ProviderCard = memo(({ provider, onInstallModels }: ProviderCardProps) => {
   const { t } = useTranslation();
   const [apiKey, setApiKey] = useState('');
@@ -169,7 +219,7 @@ const ProviderCard = memo(({ provider, onInstallModels }: ProviderCardProps) => 
       .then((result) => {
         if (result.api_key_configured) {
           setApiKey('');
-          onInstallModels(provider.provider_id);
+          onInstallModels?.(provider.provider_id);
         }
         if (result.base_url !== undefined) {
           setBaseUrl(result.base_url ?? '');

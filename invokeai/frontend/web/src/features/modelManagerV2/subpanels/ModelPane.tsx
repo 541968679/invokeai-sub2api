@@ -2,7 +2,8 @@ import type { SystemStyleObject } from '@invoke-ai/ui-library';
 import { Box, Center, Text } from '@invoke-ai/ui-library';
 import { useAppSelector } from 'app/store/storeHooks';
 import { useIsModelManagerEnabled } from 'features/modelManagerV2/hooks/useIsModelManagerEnabled';
-import { selectSelectedModelKey } from 'features/modelManagerV2/store/modelManagerV2Slice';
+import { selectSelectedModelKey, selectSelectedPanel } from 'features/modelManagerV2/store/modelManagerV2Slice';
+import { ExternalProvidersSettings } from 'features/modelManagerV2/subpanels/AddModelPanel/ExternalProviders/ExternalProvidersForm';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -25,8 +26,17 @@ const modelPaneSx: SystemStyleObject = {
 
 export const ModelPane = memo(() => {
   const selectedModelKey = useAppSelector(selectSelectedModelKey);
+  const selectedPanel = useAppSelector(selectSelectedPanel);
   const canManageModels = useIsModelManagerEnabled();
   const { t } = useTranslation();
+
+  if (selectedPanel === 'externalProviders') {
+    return (
+      <Box sx={modelPaneSx}>
+        <ExternalProvidersSettings />
+      </Box>
+    );
+  }
 
   // Show model details if a model is selected
   if (selectedModelKey) {
