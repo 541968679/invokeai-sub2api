@@ -179,6 +179,7 @@ cython_debug/
 
 # Scratch folder
 .scratch/
+tmp/
 worktrees/
 .vscode/
 .zed/
