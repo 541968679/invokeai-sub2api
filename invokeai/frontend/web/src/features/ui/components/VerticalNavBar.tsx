@@ -1,11 +1,13 @@
-import { Divider, Flex, Spacer } from '@invoke-ai/ui-library';
+import { Divider, Flex, IconButton, Spacer, Tooltip } from '@invoke-ai/ui-library';
+import { useAppSelector } from 'app/store/storeHooks';
 import { UserMenu } from 'features/auth/components/UserMenu';
+import { selectCurrentUser } from 'features/auth/store/authSlice';
 import { useIsCustomNodesEnabled } from 'features/customNodes/useIsCustomNodesEnabled';
 import InvokeAILogoComponent from 'features/system/components/InvokeAILogoComponent';
 import SettingsMenu from 'features/system/components/SettingsModal/SettingsMenu';
 import StatusIndicator from 'features/system/components/StatusIndicator';
 import { VideosModalButton } from 'features/system/components/VideosModal/VideosModalButton';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   PiBoundingBoxBold,
@@ -15,7 +17,9 @@ import {
   PiFrameCornersBold,
   PiQueueBold,
   PiTextAaBold,
+  PiUsersBold,
 } from 'react-icons/pi';
+import { useNavigate } from 'react-router-dom';
 
 import { Notifications } from './Notifications';
 import { TabButton } from './TabButton';
@@ -23,6 +27,11 @@ import { TabButton } from './TabButton';
 export const VerticalNavBar = memo(() => {
   const { t } = useTranslation();
   const { isAllowed: isCustomNodesAllowed } = useIsCustomNodesEnabled();
+  const user = useAppSelector(selectCurrentUser);
+  const navigate = useNavigate();
+  const handleUserManagement = useCallback(() => {
+    navigate('/admin/users');
+  }, [navigate]);
 
   return (
     <Flex flexDir="column" alignItems="center" py={6} ps={4} pe={2} gap={4} minW={0} flexShrink={0}>
@@ -46,6 +55,18 @@ export const VerticalNavBar = memo(() => {
 
       <Divider />
 
+      {user?.is_admin && (
+        <Tooltip label={t('auth.userManagement.menuItem')} placement="end">
+          <IconButton
+            aria-label={t('auth.userManagement.menuItem')}
+            icon={<PiUsersBold />}
+            size="md"
+            fontSize="24px"
+            variant="link"
+            onClick={handleUserManagement}
+          />
+        </Tooltip>
+      )}
       <UserMenu />
       <Notifications />
       <VideosModalButton />
