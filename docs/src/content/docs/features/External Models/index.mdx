@@ -17,6 +17,8 @@ External models appear in the model picker alongside locally installed models. G
 
 ## Configuring API Keys
 
+### Single-User Mode
+
 External provider credentials are stored in a dedicated `api_keys.yaml` file alongside `invokeai.yaml` in your Invoke root directory.
 
 ```yaml
@@ -33,6 +35,21 @@ Restart Invoke after editing `api_keys.yaml` so the new values are picked up.
 
 !!! warning "Keep your keys private"
     `api_keys.yaml` contains secrets. Do not commit it to version control and do not share it with other users of your machine.
+
+### Multi-User Mode
+
+In multi-user mode, external provider credentials are user-scoped. Each user configures their own provider API key and base URL from the web UI:
+
+1. Log in to Invoke.
+2. Open **Models**.
+3. Click **Add Models**.
+4. Open **External Providers**.
+5. Configure the provider API key and optional base URL.
+6. Click **Save**.
+
+Administrators still use the full Add Models interface. Normal users see only the External Providers configuration form from this entry point, so they can configure their own OpenAI-compatible key without gaining access to instance-level model installation actions.
+
+The key is not shown again after it is saved. The base URL remains visible so users can confirm which provider or proxy endpoint is configured.
 
 ## Installing External Models
 

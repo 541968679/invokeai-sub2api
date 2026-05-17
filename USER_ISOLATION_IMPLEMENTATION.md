@@ -1,5 +1,109 @@
 # User Isolation Implementation Summary
 
+## Current PoC Status
+
+This local branch now contains the first end-to-end PoC for running InvokeAI as a
+multi-user project with per-user OpenAI-compatible external generation keys.
+
+### Runtime and Local Test Harness
+
+- Added `scripts/dev-stack.ps1` and `scripts/dev-stack.cmd` to start, stop,
+  restart, and inspect the local InvokeAI test instance.
+- The local PoC always binds InvokeAI to `http://127.0.0.1:9090`.
+- The script writes a fixed runtime config under
+  `E:\cursor project\invokeai-sub2api-poc` and enables:
+  - `multiuser: true`
+  - `strict_password_checking: true`
+  - local built-in admin support
+- Local test admin credentials are:
+  - username: `admin`
+  - password: `admin123`
+- The built-in admin path disables backend setup account creation and the
+  frontend `/setup` route now falls back to login instead of exposing an
+  administrator creation screen.
+
+### Per-User External Provider Configuration
+
+- Added SQLite migration `migration_32.py` for
+  `user_external_provider_configs`.
+- Added the `user_external_provider_configs` service with helpers to get, set,
+  and delete a user's provider configuration.
+- In multi-user mode, these API routes are now scoped to the authenticated user:
+  - `GET /api/v1/app/external_providers/config`
+  - `POST /api/v1/app/external_providers/config/{provider_id}`
+  - `DELETE /api/v1/app/external_providers/config/{provider_id}`
+- In single-user mode, the existing global `api_keys.yaml` behavior is retained
+  for upstream compatibility.
+- API keys are stored in SQLite in plaintext for this PoC. A later migration can
+  add encryption without changing the user-facing API shape.
+
+### External Generation Isolation
+
+- `ExternalGenerationRequest` now carries `user_id`.
+- The external image generation invocation passes `queue_item.user_id` into the
+  external generation request.
+- `OpenAIProvider.generate()` resolves the API key and base URL from
+  `user_external_provider_configs` in multi-user mode.
+- If the current user has not configured OpenAI, generation fails with a clear
+  user-scoped configuration error instead of falling back to another user's key.
+- Single-user mode still reads `external_openai_api_key` and
+  `external_openai_base_url` from the existing global app config path.
+
+### Frontend UX
+
+- The setup route is no longer an administrator creation entry point in the local
+  built-in-admin PoC.
+- Admin user management is exposed as a visible left-nav action for admin users.
+- The Models page keeps a full **Add Models** entry visible for admins even when
+  a model is selected and the right pane is showing model details.
+- For non-admin users, the Models page also shows **Add Models**, but clicking it
+  opens only the **External Providers** configuration form. This lets users save
+  their own API key/base URL without exposing instance-level model installation
+  flows such as URL installs, HuggingFace, scan folder, or starter model install.
+- The regular full Add Models panel remains admin-only and still contains:
+  Launchpad, URL or Local Path, HuggingFace, External Providers, Scan Folder, and
+  Starter Models.
+
+### Verified Locally
+
+- Backend focused tests for built-in admin and per-user external provider config
+  passed.
+- Frontend TypeScript checks passed.
+- Focused ESLint checks passed for the modified model manager files.
+- Vite production builds passed after each frontend change.
+- InvokeAI was restarted through `scripts/dev-stack.ps1` and verified listening
+  on `127.0.0.1:9090`.
+
+### Current Manual Test Flow
+
+1. Start or restart InvokeAI:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev-stack.ps1 restart
+   ```
+
+2. Open `http://127.0.0.1:9090`.
+3. Log in as `admin / admin123`.
+4. Use the left-nav user-management button or direct route
+   `http://127.0.0.1:9090/admin/users` to create normal users.
+5. Log in as a normal user.
+6. Go to **Models** -> **Add Models**.
+7. Confirm the user sees only **External Providers**.
+8. Configure the `openai` provider with the user's own API key and base URL.
+9. Repeat with a second user and confirm provider status/base URL isolation.
+10. Select an external OpenAI-compatible model and generate; the request should
+    use the current queue item's `user_id` to resolve that user's credentials.
+
+### Follow-Up Items
+
+- Add encryption-at-rest for `user_external_provider_configs.api_key`.
+- Add browser-level regression tests for admin vs. normal-user model manager
+  entry behavior.
+- Complete a two-user manual generation test against Sub2API using different
+  keys/base URLs.
+- Decide whether the normal-user button label should remain **Add Models** for
+  consistency or be changed to a more explicit External Provider label.
+
 This document describes the implementation of user isolation features in the InvokeAI session queue and processing system to address issues identified in the enhancement request.
 
 ## Issues Addressed
