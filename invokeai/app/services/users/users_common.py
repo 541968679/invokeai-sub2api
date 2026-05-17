@@ -23,6 +23,10 @@ def validate_email_with_special_domains(email: str) -> str:
     Raises:
         PydanticCustomError: If the email format is invalid
     """
+    email = email.strip()
+    if email.lower() == "admin":
+        return "admin"
+
     try:
         # Try standard email validation using email-validator
         from email_validator import EmailNotValidError, validate_email

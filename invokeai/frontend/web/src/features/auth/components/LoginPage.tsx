@@ -124,11 +124,11 @@ export const LoginPage = memo(() => {
             <FormControl isRequired isInvalid={!!errorMessage}>
               <FormLabel>{t('auth.login.email')}</FormLabel>
               <Input
-                type="email"
+                type="text"
                 value={email}
                 onChange={handleEmailChange}
                 placeholder={t('auth.login.emailPlaceholder')}
-                autoComplete="email"
+                autoComplete="username"
                 autoFocus
               />
             </FormControl>

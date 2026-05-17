@@ -52,6 +52,7 @@ from invokeai.app.services.style_preset_records.style_preset_records_sqlite impo
 from invokeai.app.services.urls.urls_default import LocalUrlService
 from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfigService
 from invokeai.app.services.users.users_default import UserService
+from invokeai.app.services.users.users_common import UserCreateRequest, UserUpdateRequest
 from invokeai.app.services.workflow_records.workflow_records_sqlite import SqliteWorkflowRecordsStorage
 from invokeai.app.services.workflow_thumbnails.workflow_thumbnails_disk import WorkflowThumbnailFileStorageDisk
 from invokeai.backend.stable_diffusion.diffusion.conditioning_data import (
@@ -83,6 +84,40 @@ def check_internet() -> bool:
         return True
     except Exception:
         return False
+
+
+def ensure_builtin_admin(config: InvokeAIAppConfig, users: UserService, logger: Logger) -> None:
+    if not config.multiuser or not config.builtin_admin_enabled:
+        return
+    if not config.builtin_admin_password:
+        raise ValueError("builtin_admin_enabled requires builtin_admin_password")
+
+    username = config.builtin_admin_username.strip() or "admin"
+    existing = users.get_by_email(username)
+    if existing is None:
+        users.create(
+            UserCreateRequest(
+                email=username,
+                display_name="Administrator",
+                password=config.builtin_admin_password,
+                is_admin=True,
+            ),
+            strict_password_checking=False,
+        )
+        logger.info("Created built-in administrator account '%s'", username)
+        return
+
+    users.update(
+        existing.user_id,
+        UserUpdateRequest(
+            display_name=existing.display_name or "Administrator",
+            password=config.builtin_admin_password,
+            is_admin=True,
+            is_active=True,
+        ),
+        strict_password_checking=False,
+    )
+    logger.info("Ensured built-in administrator account '%s'", username)
 
 
 logger = InvokeAILogger.get_logger()
@@ -194,6 +229,7 @@ class ApiDependencies:
         workflow_thumbnails = WorkflowThumbnailFileStorageDisk(workflow_thumbnails_folder)
         client_state_persistence = ClientStatePersistenceSqlite(db=db)
         users = UserService(db=db)
+        ensure_builtin_admin(config=configuration, users=users, logger=logger)
 
         services = InvocationServices(
             board_image_records=board_image_records,

@@ -336,6 +336,27 @@ def test_setup_admin_weak_password_non_strict(monkeypatch: Any, mock_invoker: In
     assert json_response["success"] is True
 
 
+def test_builtin_admin_disables_setup(monkeypatch: Any, mock_invoker: Invoker, client: TestClient) -> None:
+    """Test setup is not exposed when built-in admin mode is enabled."""
+    monkeypatch.setattr("invokeai.app.api.routers.auth.ApiDependencies", MockApiDependencies(mock_invoker))
+    mock_invoker.services.configuration.builtin_admin_enabled = True
+
+    status_response = client.get("/api/v1/auth/status")
+    assert status_response.status_code == 200
+    assert status_response.json()["setup_required"] is False
+
+    setup_response = client.post(
+        "/api/v1/auth/setup",
+        json={
+            "email": "admin@example.com",
+            "display_name": "Admin User",
+            "password": "AdminPass123",
+        },
+    )
+    assert setup_response.status_code == 403
+    assert "setup is disabled" in setup_response.json()["detail"].lower()
+
+
 def test_admin_user_token_has_admin_flag(monkeypatch: Any, mock_invoker: Invoker, client: TestClient) -> None:
     """Test that admin user login returns token with admin flag."""
     monkeypatch.setattr("invokeai.app.api.routers.auth.ApiDependencies", MockApiDependencies(mock_invoker))

@@ -92,6 +92,14 @@ async def get_setup_status() -> SetupStatusResponse:
     """
     config = ApiDependencies.invoker.services.configuration
 
+    if config.builtin_admin_enabled:
+        return SetupStatusResponse(
+            setup_required=False,
+            multiuser_enabled=True,
+            strict_password_checking=config.strict_password_checking,
+            admin_email=None,
+        )
+
     # If multiuser is disabled, setup is never required
     if not config.multiuser:
         return SetupStatusResponse(
@@ -240,6 +248,12 @@ async def setup_admin(
         HTTPException: 403 if multiuser mode is disabled
     """
     config = ApiDependencies.invoker.services.configuration
+
+    if config.builtin_admin_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator setup is disabled. Use the configured administrator account.",
+        )
 
     # Check if multiuser is enabled
     if not config.multiuser:

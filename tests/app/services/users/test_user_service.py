@@ -61,6 +61,21 @@ def test_create_user(user_service: UserService):
     assert user.user_id is not None
 
 
+def test_create_builtin_admin_username(user_service: UserService):
+    """Test the local PoC built-in admin username is accepted."""
+    user_data = UserCreateRequest(
+        email="admin",
+        display_name="Administrator",
+        password="admin123",
+        is_admin=True,
+    )
+
+    user = user_service.create(user_data, strict_password_checking=False)
+
+    assert user.email == "admin"
+    assert user.is_admin is True
+
+
 def test_create_user_weak_password(user_service: UserService):
     """Test creating a user with weak password fails when strict checking is enabled."""
     user_data = UserCreateRequest(

@@ -170,6 +170,9 @@ function Ensure-RuntimeConfig {
     $lines = Set-YamlScalar -Lines $lines -Key "port" -Value ([string]$Port)
     $lines = Set-YamlScalar -Lines $lines -Key "multiuser" -Value "true"
     $lines = Set-YamlScalar -Lines $lines -Key "strict_password_checking" -Value "true"
+    $lines = Set-YamlScalar -Lines $lines -Key "builtin_admin_enabled" -Value "true"
+    $lines = Set-YamlScalar -Lines $lines -Key "builtin_admin_username" -Value "admin"
+    $lines = Set-YamlScalar -Lines $lines -Key "builtin_admin_password" -Value "admin123"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($ConfigPath, [string[]]$lines, $utf8NoBom)
 }
