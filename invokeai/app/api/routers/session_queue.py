@@ -345,16 +345,12 @@ async def clear(
 ) -> ClearResult:
     """Clears the queue entirely. Admin users clear all items; non-admin users only clear their own items. If there's a currently-executing item, users can only cancel it if they own it or are an admin."""
     try:
-        queue_item = ApiDependencies.invoker.services.session_queue.get_current(queue_id)
-        if queue_item is not None:
-            # Check authorization for canceling the current item
-            if queue_item.user_id != current_user.user_id and not current_user.is_admin:
-                raise HTTPException(
-                    status_code=403, detail="You do not have permission to cancel the currently executing queue item"
-                )
-            ApiDependencies.invoker.services.session_queue.cancel_queue_item(queue_item.item_id)
         # Admin users can clear all items, non-admin users can only clear their own
         user_id = None if current_user.is_admin else current_user.user_id
+        current_items = ApiDependencies.invoker.services.session_queue.get_current_items(queue_id)
+        for queue_item in current_items:
+            if user_id is None or queue_item.user_id == user_id:
+                ApiDependencies.invoker.services.session_queue.cancel_queue_item(queue_item.item_id)
         clear_result = ApiDependencies.invoker.services.session_queue.clear(queue_id, user_id=user_id)
         return clear_result
     except HTTPException:
@@ -402,6 +398,25 @@ async def get_current_queue_item(
         return item
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Unexpected error while getting current queue item: {e}")
+
+
+@session_queue_router.get(
+    "/{queue_id}/current_items",
+    operation_id="get_current_queue_items",
+    responses={
+        200: {"model": list[SessionQueueItem]},
+    },
+)
+async def get_current_queue_items(
+    current_user: CurrentUserOrDefault,
+    queue_id: str = Path(description="The queue id to perform this operation on"),
+) -> list[SessionQueueItem]:
+    """Gets all currently executing queue items"""
+    try:
+        items = ApiDependencies.invoker.services.session_queue.get_current_items(queue_id)
+        return [sanitize_queue_item_for_user(item, current_user.user_id, current_user.is_admin) for item in items]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error while getting current queue items: {e}")
 
 
 @session_queue_router.get(

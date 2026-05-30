@@ -449,6 +449,7 @@ export const setEventListeners = ({ socket, store, setIsConnected }: SetEventLis
     // Invalidate SessionQueueStatus to refetch with user-specific counts
     const tagsToInvalidate: ApiTagDescription[] = [
       'CurrentSessionQueueItem',
+      'CurrentSessionQueueItems',
       'NextSessionQueueItem',
       'InvocationCacheStatus',
       'SessionQueueStatus',
@@ -502,6 +503,7 @@ export const setEventListeners = ({ socket, store, setIsConnected }: SetEventLis
         'SessionProcessorStatus',
         'BatchStatus',
         'CurrentSessionQueueItem',
+        'CurrentSessionQueueItems',
         'NextSessionQueueItem',
         'QueueCountsByDestination',
         'SessionQueueItemIdList',
@@ -517,6 +519,7 @@ export const setEventListeners = ({ socket, store, setIsConnected }: SetEventLis
       queueApi.util.invalidateTags([
         'SessionQueueStatus',
         'CurrentSessionQueueItem',
+        'CurrentSessionQueueItems',
         'NextSessionQueueItem',
         'QueueCountsByDestination',
         'SessionQueueItemIdList',
@@ -532,6 +535,7 @@ export const setEventListeners = ({ socket, store, setIsConnected }: SetEventLis
       'SessionQueueStatus',
       'BatchStatus',
       'CurrentSessionQueueItem',
+      'CurrentSessionQueueItems',
       'NextSessionQueueItem',
       'QueueCountsByDestination',
       'SessionQueueItemIdList',

@@ -1,9 +1,9 @@
-import { useGetCurrentQueueItemQuery } from 'services/api/endpoints/queue';
+import { useGetCurrentQueueItemsQuery } from 'services/api/endpoints/queue';
 
 export const useCurrentQueueItemId = () => {
-  const { currentQueueItemId } = useGetCurrentQueueItemQuery(undefined, {
+  const { currentQueueItemId } = useGetCurrentQueueItemsQuery(undefined, {
     selectFromResult: ({ data }) => ({
-      currentQueueItemId: data?.item_id ?? null,
+      currentQueueItemId: data?.[0]?.item_id ?? null,
     }),
   });
 

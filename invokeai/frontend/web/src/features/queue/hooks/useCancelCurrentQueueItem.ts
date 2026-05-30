@@ -1,18 +1,29 @@
 import { useAppSelector } from 'app/store/storeHooks';
 import { selectCurrentUser } from 'features/auth/store/authSlice';
-import { useCurrentQueueItemId } from 'features/queue/hooks/useCurrentQueueItemId';
 import { useCallback, useMemo } from 'react';
 import { useGetSetupStatusQuery } from 'services/api/endpoints/auth';
-import { useGetCurrentQueueItemQuery } from 'services/api/endpoints/queue';
+import { useGetCurrentQueueItemsQuery } from 'services/api/endpoints/queue';
 
 import { useCancelQueueItem } from './useCancelQueueItem';
 
 export const useCancelCurrentQueueItem = () => {
-  const currentQueueItemId = useCurrentQueueItemId();
-  const { data: currentQueueItem } = useGetCurrentQueueItemQuery();
+  const { data: currentQueueItems } = useGetCurrentQueueItemsQuery();
   const currentUser = useAppSelector(selectCurrentUser);
   const { data: setupStatus } = useGetSetupStatusQuery();
   const cancelQueueItem = useCancelQueueItem();
+
+  const currentQueueItemId = useMemo(() => {
+    if (!currentQueueItems?.length) {
+      return null;
+    }
+    if (setupStatus && !setupStatus.multiuser_enabled) {
+      return currentQueueItems[0]?.item_id ?? null;
+    }
+    if (currentUser?.is_admin) {
+      return currentQueueItems[0]?.item_id ?? null;
+    }
+    return currentQueueItems.find((item) => item.user_id === currentUser?.user_id)?.item_id ?? null;
+  }, [currentQueueItems, currentUser, setupStatus]);
 
   // Check if current user can cancel the current item
   const canCancelCurrentItem = useMemo(() => {
@@ -21,7 +32,7 @@ export const useCancelCurrentQueueItem = () => {
       return true;
     }
 
-    if (!currentUser || !currentQueueItem) {
+    if (!currentUser || !currentQueueItems?.length) {
       return false;
     }
     // Admin users can cancel all items
@@ -29,8 +40,8 @@ export const useCancelCurrentQueueItem = () => {
       return true;
     }
     // Non-admin users can only cancel their own items
-    return currentQueueItem.user_id === currentUser.user_id;
-  }, [setupStatus, currentUser, currentQueueItem]);
+    return currentQueueItems.some((item) => item.user_id === currentUser.user_id);
+  }, [setupStatus, currentUser, currentQueueItems]);
 
   const trigger = useCallback(
     (options?: { withToast?: boolean }) => {

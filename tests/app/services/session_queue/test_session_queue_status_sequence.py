@@ -21,12 +21,13 @@ def _insert_queue_item(
     session_queue: SqliteSessionQueue,
     queue_id: str = "default",
     destination: str | None = None,
+    batch_id: str | None = None,
 ) -> int:
     graph = Graph()
     graph.add_node(PromptTestInvocation(id="prompt", prompt="test"))
     session = GraphExecutionState(graph=graph)
     session_json = session.model_dump_json(warnings=False, exclude_none=True)
-    batch_id = str(uuid.uuid4())
+    batch_id = batch_id or str(uuid.uuid4())
     with session_queue._db.transaction() as cursor:
         cursor.execute(
             """--sql
@@ -101,3 +102,47 @@ def test_status_sequence_continues_after_dequeue_then_cancel(session_queue: Sqli
     canceled_item = session_queue.cancel_queue_item(item_id)
     assert canceled_item.status == "canceled"
     assert canceled_item.status_sequence == 2
+
+
+def test_get_current_items_returns_all_in_progress_items(session_queue: SqliteSessionQueue) -> None:
+    first_item_id = _insert_queue_item(session_queue)
+    second_item_id = _insert_queue_item(session_queue)
+
+    assert session_queue.dequeue() is not None
+    assert session_queue.dequeue() is not None
+
+    current_items = session_queue.get_current_items("default")
+
+    assert [item.item_id for item in current_items] == [first_item_id, second_item_id]
+    assert all(item.status == "in_progress" for item in current_items)
+    assert session_queue.get_current("default") is not None
+    assert session_queue.get_queue_status("default").in_progress == 2
+
+
+def test_cancel_by_batch_ids_cancels_all_matching_in_progress_items(
+    session_queue: SqliteSessionQueue,
+) -> None:
+    batch_id = str(uuid.uuid4())
+    item_ids = [_insert_queue_item(session_queue, batch_id=batch_id) for _ in range(4)]
+
+    for _ in range(4):
+        assert session_queue.dequeue() is not None
+
+    result = session_queue.cancel_by_batch_ids("default", [batch_id])
+
+    assert result.canceled == 4
+    assert [session_queue.get_queue_item(item_id).status for item_id in item_ids] == ["canceled"] * 4
+
+
+def test_cancel_by_destination_cancels_all_matching_in_progress_items(
+    session_queue: SqliteSessionQueue,
+) -> None:
+    item_ids = [_insert_queue_item(session_queue, destination="canvas") for _ in range(4)]
+
+    for _ in range(4):
+        assert session_queue.dequeue() is not None
+
+    result = session_queue.cancel_by_destination("default", "canvas")
+
+    assert result.canceled == 4
+    assert [session_queue.get_queue_item(item_id).status for item_id in item_ids] == ["canceled"] * 4

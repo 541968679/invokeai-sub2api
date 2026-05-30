@@ -32,6 +32,7 @@ const tagTypes = [
   'SessionQueueStatus',
   'SessionProcessorStatus',
   'CurrentSessionQueueItem',
+  'CurrentSessionQueueItems',
   'NextSessionQueueItem',
   'BatchStatus',
   'InvocationCacheStatus',

@@ -2,18 +2,23 @@ import { Flex, Text } from '@invoke-ai/ui-library';
 import { setFocusedRegion } from 'common/hooks/focus';
 import { useCallbackOnDragEnter } from 'common/hooks/useCallbackOnDragEnter';
 import type { IDockviewPanelHeaderProps } from 'dockview';
-import { useCurrentQueueItemDestination } from 'features/queue/hooks/useCurrentQueueItemDestination';
 import ProgressBar from 'features/system/components/ProgressBar';
 import { memo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useIsGenerationInProgress } from 'services/api/endpoints/queue';
+import { useGetQueueCountsByDestinationQuery } from 'services/api/endpoints/queue';
 
 import type { DockviewPanelParameters } from './auto-layout-context';
 
 export const DockviewTabCanvasViewer = memo((props: IDockviewPanelHeaderProps<DockviewPanelParameters>) => {
   const { t } = useTranslation();
-  const isGenerationInProgress = useIsGenerationInProgress();
-  const currentQueueItemDestination = useCurrentQueueItemDestination();
+  const { hasActiveItems } = useGetQueueCountsByDestinationQuery(
+    { destination: 'canvas' },
+    {
+      selectFromResult: ({ data }) => ({
+        hasActiveItems: Boolean(data && data.pending + data.in_progress > 0),
+      }),
+    }
+  );
 
   const ref = useRef<HTMLDivElement>(null);
   const setActive = useCallback(() => {
@@ -33,7 +38,7 @@ export const DockviewTabCanvasViewer = memo((props: IDockviewPanelHeaderProps<Do
       <Text userSelect="none" px={4}>
         {t(props.params.i18nKey)}
       </Text>
-      {currentQueueItemDestination === 'canvas' && isGenerationInProgress && (
+      {hasActiveItems && (
         <ProgressBar position="absolute" bottom={0} left={0} right={0} h={1} borderRadius="none" />
       )}
     </Flex>

@@ -220,7 +220,10 @@ class ApiDependencies:
         model_relationship_records = SqliteModelRelationshipRecordStorage(db=db)
         names = SimpleNameService()
         performance_statistics = InvocationStatsService()
-        session_processor = DefaultSessionProcessor(session_runner=DefaultSessionRunner())
+        session_processor = DefaultSessionProcessor(
+            session_runner_factory=DefaultSessionRunner,
+            thread_limit=configuration.session_queue_concurrency,
+        )
         session_queue = SqliteSessionQueue(db=db)
         urls = LocalUrlService()
         workflow_records = SqliteWorkflowRecordsStorage(db=db)

@@ -7,6 +7,8 @@ from invokeai.backend.util.util import image_to_dataURL
 class SessionProcessorStatus(BaseModel):
     is_started: bool = Field(description="Whether the session processor is started")
     is_processing: bool = Field(description="Whether a session is being processed")
+    active_count: int = Field(default=0, ge=0, description="Number of sessions currently being processed")
+    concurrency: int = Field(default=1, ge=1, description="Maximum number of sessions that may be processed concurrently")
 
 
 class CanceledException(Exception):

@@ -214,11 +214,8 @@ class SqliteSessionQueue(SessionQueueBase):
             cursor.execute(
                 """--sql
                 SELECT
-                    sq.*,
-                    u.display_name as user_display_name,
-                    u.email as user_email
+                    sq.item_id
                 FROM session_queue sq
-                LEFT JOIN users u ON sq.user_id = u.user_id
                 WHERE sq.status = 'pending'
                 ORDER BY
                     sq.priority DESC,
@@ -226,12 +223,56 @@ class SqliteSessionQueue(SessionQueueBase):
                 LIMIT 1
                 """
             )
-            result = cast(Union[sqlite3.Row, None], cursor.fetchone())
-        if result is None:
-            return None
-        queue_item = SessionQueueItem.queue_item_from_dict(dict(result))
-        queue_item = self._set_queue_item_status(item_id=queue_item.item_id, status="in_progress")
+            result = cursor.fetchone()
+            if result is None:
+                return None
+            item_id = cast(int, result[0])
+            cursor.execute(
+                """--sql
+                UPDATE session_queue
+                SET status = 'in_progress',
+                    status_sequence = COALESCE(status_sequence, 0) + 1,
+                    error_type = NULL,
+                    error_message = NULL,
+                    error_traceback = NULL
+                WHERE item_id = ? AND status = 'pending'
+                """,
+                (item_id,),
+            )
+            if cursor.rowcount != 1:
+                return None
+        queue_item = self.get_queue_item(item_id)
+        self._emit_queue_item_status_changed(queue_item)
         return queue_item
+
+    def get_current_items(self, queue_id: str) -> list[SessionQueueItem]:
+        with self._db.transaction() as cursor:
+            cursor.execute(
+                """--sql
+                SELECT
+                    sq.*,
+                    u.display_name as user_display_name,
+                    u.email as user_email
+                FROM session_queue sq
+                LEFT JOIN users u ON sq.user_id = u.user_id
+                WHERE
+                    sq.queue_id = ?
+                    AND sq.status = 'in_progress'
+                ORDER BY
+                    sq.priority DESC,
+                    sq.started_at ASC,
+                    sq.item_id ASC
+                """,
+                (queue_id,),
+            )
+            results = cast(list[sqlite3.Row], cursor.fetchall())
+        return [SessionQueueItem.queue_item_from_dict(dict(result)) for result in results]
+
+    def get_current(self, queue_id: str) -> Optional[SessionQueueItem]:
+        current_items = self.get_current_items(queue_id)
+        if not current_items:
+            return None
+        return current_items[0]
 
     def get_next(self, queue_id: str) -> Optional[SessionQueueItem]:
         with self._db.transaction() as cursor:
@@ -249,28 +290,6 @@ class SqliteSessionQueue(SessionQueueBase):
                 ORDER BY
                     sq.priority DESC,
                     sq.created_at ASC
-                LIMIT 1
-                """,
-                (queue_id,),
-            )
-            result = cast(Union[sqlite3.Row, None], cursor.fetchone())
-        if result is None:
-            return None
-        return SessionQueueItem.queue_item_from_dict(dict(result))
-
-    def get_current(self, queue_id: str) -> Optional[SessionQueueItem]:
-        with self._db.transaction() as cursor:
-            cursor.execute(
-                """--sql
-                SELECT
-                    sq.*,
-                    u.display_name as user_display_name,
-                    u.email as user_email
-                FROM session_queue sq
-                LEFT JOIN users u ON sq.user_id = u.user_id
-                WHERE
-                    sq.queue_id = ?
-                    AND sq.status = 'in_progress'
                 LIMIT 1
                 """,
                 (queue_id,),
@@ -315,6 +334,10 @@ class SqliteSessionQueue(SessionQueueBase):
             )
 
         queue_item = self.get_queue_item(item_id)
+        self._emit_queue_item_status_changed(queue_item)
+        return queue_item
+
+    def _emit_queue_item_status_changed(self, queue_item: SessionQueueItem) -> None:
         batch_status = self.get_batch_status(queue_id=queue_item.queue_id, batch_id=queue_item.batch_id)
         # The QueueItemStatusChangedEvent ships to user:{queue_item.user_id} and admin rooms.
         # acting_user_id ensures the embedded current-item identifiers are redacted when the
@@ -325,7 +348,6 @@ class SqliteSessionQueue(SessionQueueBase):
         queue_status = self.get_queue_status(queue_id=queue_item.queue_id, acting_user_id=queue_item.user_id)
 
         self.__invoker.services.events.emit_queue_item_status_changed(queue_item, batch_status, queue_status)
-        return queue_item
 
     def is_empty(self, queue_id: str) -> IsEmptyResult:
         with self._db.transaction() as cursor:
@@ -465,7 +487,6 @@ class SqliteSessionQueue(SessionQueueBase):
         self, queue_id: str, batch_ids: list[str], user_id: Optional[str] = None
     ) -> CancelByBatchIDsResult:
         with self._db.transaction() as cursor:
-            current_queue_item = self.get_current(queue_id)
             placeholders = ", ".join(["?" for _ in batch_ids])
 
             # Build WHERE clause with optional user_id filter
@@ -477,7 +498,6 @@ class SqliteSessionQueue(SessionQueueBase):
                   AND status != 'canceled'
                   AND status != 'completed'
                   AND status != 'failed'
-                  -- We will cancel the current item separately below - skip it here
                   AND status != 'in_progress'
                   {user_filter}
                 """
@@ -504,10 +524,10 @@ class SqliteSessionQueue(SessionQueueBase):
                 tuple(params),
             )
 
-        # Handle current item separately - check ownership if user_id is provided
-        if current_queue_item is not None and current_queue_item.batch_id in batch_ids:
-            if user_id is None or current_queue_item.user_id == user_id:
+        for current_queue_item in self.get_current_items(queue_id):
+            if current_queue_item.batch_id in batch_ids and (user_id is None or current_queue_item.user_id == user_id):
                 self._set_queue_item_status(current_queue_item.item_id, "canceled")
+                count += 1
 
         return CancelByBatchIDsResult(canceled=count)
 
@@ -515,8 +535,6 @@ class SqliteSessionQueue(SessionQueueBase):
         self, queue_id: str, destination: str, user_id: Optional[str] = None
     ) -> CancelByDestinationResult:
         with self._db.transaction() as cursor:
-            current_queue_item = self.get_current(queue_id)
-
             # Build WHERE clause with optional user_id filter
             user_filter = "AND user_id = ?" if user_id is not None else ""
             where = f"""--sql
@@ -526,7 +544,6 @@ class SqliteSessionQueue(SessionQueueBase):
                   AND status != 'canceled'
                   AND status != 'completed'
                   AND status != 'failed'
-                  -- We will cancel the current item separately below - skip it here
                   AND status != 'in_progress'
                   {user_filter}
                 """
@@ -553,10 +570,12 @@ class SqliteSessionQueue(SessionQueueBase):
                 tuple(params),
             )
 
-        # Handle current item separately - check ownership if user_id is provided
-        if current_queue_item is not None and current_queue_item.destination == destination:
-            if user_id is None or current_queue_item.user_id == user_id:
+        for current_queue_item in self.get_current_items(queue_id):
+            if current_queue_item.destination == destination and (
+                user_id is None or current_queue_item.user_id == user_id
+            ):
                 self._set_queue_item_status(current_queue_item.item_id, "canceled")
+                count += 1
 
         return CancelByDestinationResult(canceled=count)
 
@@ -564,11 +583,13 @@ class SqliteSessionQueue(SessionQueueBase):
         self, queue_id: str, destination: str, user_id: Optional[str] = None
     ) -> DeleteByDestinationResult:
         with self._db.transaction() as cursor:
-            current_queue_item = self.get_current(queue_id)
+            current_queue_items = self.get_current_items(queue_id)
 
-            # Handle current item separately - check ownership if user_id is provided
-            if current_queue_item is not None and current_queue_item.destination == destination:
-                if user_id is None or current_queue_item.user_id == user_id:
+            # Handle current items separately - check ownership if user_id is provided
+            for current_queue_item in current_queue_items:
+                if current_queue_item.destination == destination and (
+                    user_id is None or current_queue_item.user_id == user_id
+                ):
                     self.cancel_queue_item(current_queue_item.item_id)
 
             # Build WHERE clause with optional user_id filter
@@ -636,14 +657,12 @@ class SqliteSessionQueue(SessionQueueBase):
 
     def cancel_by_queue_id(self, queue_id: str) -> CancelByQueueIDResult:
         with self._db.transaction() as cursor:
-            current_queue_item = self.get_current(queue_id)
             where = """--sql
                 WHERE
                   queue_id is ?
                   AND status != 'canceled'
                   AND status != 'completed'
                   AND status != 'failed'
-                  -- We will cancel the current item separately below - skip it here
                   AND status != 'in_progress'
                 """
             params = [queue_id]
@@ -666,8 +685,9 @@ class SqliteSessionQueue(SessionQueueBase):
                 tuple(params),
             )
 
-        if current_queue_item is not None and current_queue_item.queue_id == queue_id:
+        for current_queue_item in self.get_current_items(queue_id):
             self._set_queue_item_status(current_queue_item.item_id, "canceled")
+            count += 1
         return CancelByQueueIDResult(canceled=count)
 
     def cancel_all_except_current(self, queue_id: str, user_id: Optional[str] = None) -> CancelAllExceptCurrentResult:
@@ -883,7 +903,7 @@ class SqliteSessionQueue(SessionQueueBase):
                 )
             counts_result = cast(list[sqlite3.Row], cursor.fetchall())
 
-        current_item = self.get_current(queue_id=queue_id)
+        current_items = self.get_current_items(queue_id=queue_id)
         total = sum(row[1] or 0 for row in counts_result)
         counts: dict[str, int] = {row[0]: row[1] for row in counts_result}
 
@@ -894,15 +914,20 @@ class SqliteSessionQueue(SessionQueueBase):
         # pass only acting_user_id; non-admin API callers pass user_id and inherit the same
         # redaction by default.
         owner_user_id = user_id if acting_user_id is None else acting_user_id
-        show_current_item = current_item is not None and (
-            owner_user_id is None or current_item.user_id == owner_user_id
+        current_item = next(
+            (
+                item
+                for item in current_items
+                if owner_user_id is None or item.user_id == owner_user_id
+            ),
+            None,
         )
 
         return SessionQueueStatus(
             queue_id=queue_id,
-            item_id=current_item.item_id if show_current_item else None,
-            session_id=current_item.session_id if show_current_item else None,
-            batch_id=current_item.batch_id if show_current_item else None,
+            item_id=current_item.item_id if current_item is not None else None,
+            session_id=current_item.session_id if current_item is not None else None,
+            batch_id=current_item.batch_id if current_item is not None else None,
             pending=counts.get("pending", 0),
             in_progress=counts.get("in_progress", 0),
             completed=counts.get("completed", 0),

@@ -48,6 +48,11 @@ class SessionQueueBase(ABC):
         pass
 
     @abstractmethod
+    def get_current_items(self, queue_id: str) -> list[SessionQueueItem]:
+        """Gets all currently-executing session queue items"""
+        pass
+
+    @abstractmethod
     def get_next(self, queue_id: str) -> Optional[SessionQueueItem]:
         """Gets the next session queue item (does not dequeue it)"""
         pass

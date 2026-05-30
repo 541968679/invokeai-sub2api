@@ -7,7 +7,6 @@ so unredacted fields would let owner A learn user B's identifiers.
 """
 
 import uuid
-from typing import Optional
 
 import pytest
 
@@ -149,21 +148,21 @@ def test_event_redacts_when_current_item_disappears_between_reads(
     assert in_progress is not None and in_progress.item_id == b_item_id
     assert in_progress.user_id == user_b
 
-    real_get_current = session_queue.get_current
-    b_snapshot = real_get_current(queue_id="default")
-    assert b_snapshot is not None and b_snapshot.user_id == user_b
+    real_get_current_items = session_queue.get_current_items
+    b_snapshot = real_get_current_items(queue_id="default")
+    assert b_snapshot and b_snapshot[0].user_id == user_b
 
     # Simulate the race: the read inside get_queue_status sees B's in-progress
     # item; the redaction read returns None as if B finished in between.
     call_count = {"n": 0}
 
-    def racey_get_current(queue_id: str) -> Optional[SessionQueueItem]:
+    def racey_get_current_items(queue_id: str) -> list[SessionQueueItem]:
         call_count["n"] += 1
         if call_count["n"] == 1:
             return b_snapshot
-        return None
+        return []
 
-    monkeypatch.setattr(session_queue, "get_current", racey_get_current)
+    monkeypatch.setattr(session_queue, "get_current_items", racey_get_current_items)
 
     event_bus: TestEventService = mock_invoker.services.events
     event_bus.events.clear()

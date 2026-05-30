@@ -35,6 +35,7 @@ export const queueApi = api.injectEndpoints({
       }),
       invalidatesTags: [
         'CurrentSessionQueueItem',
+        'CurrentSessionQueueItems',
         'NextSessionQueueItem',
         'QueueCountsByDestination',
         'SessionQueueItemIdList',
@@ -47,7 +48,7 @@ export const queueApi = api.injectEndpoints({
           const { data } = await queryFulfilled;
           dispatch(
             queueApi.util.updateQueryData('getQueueStatus', undefined, (draft) => {
-              draft.queue.in_progress += data.item_ids.length;
+              draft.queue.pending += data.item_ids.length;
               draft.queue.total += data.item_ids.length;
             })
           );
@@ -64,7 +65,7 @@ export const queueApi = api.injectEndpoints({
         url: buildQueueUrl('processor/resume'),
         method: 'PUT',
       }),
-      invalidatesTags: ['CurrentSessionQueueItem', 'SessionQueueStatus'],
+      invalidatesTags: ['CurrentSessionQueueItem', 'CurrentSessionQueueItems', 'SessionQueueStatus'],
     }),
     pauseProcessor: build.mutation<
       paths['/api/v1/queue/{queue_id}/processor/pause']['put']['responses']['200']['content']['application/json'],
@@ -74,7 +75,7 @@ export const queueApi = api.injectEndpoints({
         url: buildQueueUrl('processor/pause'),
         method: 'PUT',
       }),
-      invalidatesTags: ['CurrentSessionQueueItem', 'SessionQueueStatus'],
+      invalidatesTags: ['CurrentSessionQueueItem', 'CurrentSessionQueueItems', 'SessionQueueStatus'],
     }),
     pruneQueue: build.mutation<
       paths['/api/v1/queue/{queue_id}/prune']['put']['responses']['200']['content']['application/json'],
@@ -105,6 +106,7 @@ export const queueApi = api.injectEndpoints({
         'SessionProcessorStatus',
         'BatchStatus',
         'CurrentSessionQueueItem',
+        'CurrentSessionQueueItems',
         'NextSessionQueueItem',
         'QueueCountsByDestination',
         'SessionQueueItemIdList',
@@ -124,6 +126,21 @@ export const queueApi = api.injectEndpoints({
         const tags: ApiTagDescription[] = ['CurrentSessionQueueItem', 'FetchOnReconnect'];
         if (result) {
           tags.push({ type: 'SessionQueueItem', id: result.item_id });
+        }
+        return tags;
+      },
+    }),
+    getCurrentQueueItems: build.query<components['schemas']['SessionQueueItem'][], void>({
+      query: () => ({
+        url: buildQueueUrl('current_items'),
+        method: 'GET',
+      }),
+      providesTags: (result) => {
+        const tags: ApiTagDescription[] = ['CurrentSessionQueueItems', 'FetchOnReconnect'];
+        if (result) {
+          tags.push(
+            ...result.map((item) => ({ type: 'SessionQueueItem', id: item.item_id }) satisfies ApiTagDescription)
+          );
         }
         return tags;
       },
@@ -281,6 +298,7 @@ export const queueApi = api.injectEndpoints({
           'SessionQueueStatus',
           'BatchStatus',
           'CurrentSessionQueueItem',
+          'CurrentSessionQueueItems',
           'NextSessionQueueItem',
           'QueueCountsByDestination',
           'SessionQueueItemIdList',
@@ -412,6 +430,7 @@ export const {
   useCancelQueueItemMutation,
   useCancelQueueItemsByDestinationMutation,
   useGetCurrentQueueItemQuery,
+  useGetCurrentQueueItemsQuery,
 
   useDeleteQueueItemMutation,
   useDeleteAllExceptCurrentMutation,

@@ -1,9 +1,9 @@
 import gc
 import traceback
 from contextlib import suppress
-from threading import BoundedSemaphore, Thread
 from threading import Event as ThreadEvent
-from typing import Optional
+from threading import Lock, Thread
+from typing import Callable, Optional
 
 from invokeai.app.invocations.baseinvocation import BaseInvocation, BaseInvocationOutput
 from invokeai.app.services.events.events_common import (
@@ -309,58 +309,49 @@ class DefaultSessionProcessor(SessionProcessorBase):
     def __init__(
         self,
         session_runner: Optional[SessionRunnerBase] = None,
+        session_runner_factory: Callable[[], SessionRunnerBase] | None = None,
         on_non_fatal_processor_error_callbacks: Optional[list[OnNonFatalProcessorError]] = None,
         thread_limit: int = 1,
         polling_interval: int = 1,
     ) -> None:
         super().__init__()
 
-        self.session_runner = session_runner if session_runner else DefaultSessionRunner()
+        self._session_runner = session_runner
+        self._session_runner_factory = session_runner_factory or DefaultSessionRunner
         self._on_non_fatal_processor_error_callbacks = on_non_fatal_processor_error_callbacks or []
-        self._thread_limit = thread_limit
+        self._thread_limit = max(1, thread_limit)
         self._polling_interval = polling_interval
 
     def start(self, invoker: Invoker) -> None:
         self._invoker: Invoker = invoker
-        self._queue_item: Optional[SessionQueueItem] = None
-        self._invocation: Optional[BaseInvocation] = None
+        self._queue_items: dict[int, SessionQueueItem] = {}
+        self._cancel_events: dict[int, ThreadEvent] = {}
+        self._worker_lock = Lock()
 
         self._resume_event = ThreadEvent()
         self._stop_event = ThreadEvent()
-        self._poll_now_event = ThreadEvent()
-        self._cancel_event = ThreadEvent()
+        self._poll_now_events = [ThreadEvent() for _ in range(self._thread_limit)]
 
         register_events(QueueClearedEvent, self._on_queue_cleared)
         register_events(BatchEnqueuedEvent, self._on_batch_enqueued)
         register_events(QueueItemStatusChangedEvent, self._on_queue_item_status_changed)
 
-        self._thread_semaphore = BoundedSemaphore(self._thread_limit)
-
-        # If profiling is enabled, create a profiler. The same profiler will be used for all sessions. Internally,
-        # the profiler will create a new profile for each session.
-        self._profiler = (
-            Profiler(
-                logger=self._invoker.services.logger,
-                output_dir=self._invoker.services.configuration.profiles_path,
-                prefix=self._invoker.services.configuration.profile_prefix,
+        self._threads = [
+            Thread(
+                name=f"session_processor_{worker_id}",
+                target=self._process,
+                daemon=True,
+                kwargs={
+                    "worker_id": worker_id,
+                    "stop_event": self._stop_event,
+                    "poll_now_event": self._poll_now_events[worker_id],
+                    "resume_event": self._resume_event,
+                },
             )
-            if self._invoker.services.configuration.profile_graphs
-            else None
-        )
-
-        self.session_runner.start(services=invoker.services, cancel_event=self._cancel_event, profiler=self._profiler)
-        self._thread = Thread(
-            name="session_processor",
-            target=self._process,
-            daemon=True,
-            kwargs={
-                "stop_event": self._stop_event,
-                "poll_now_event": self._poll_now_event,
-                "resume_event": self._resume_event,
-                "cancel_event": self._cancel_event,
-            },
-        )
-        self._thread.start()
+            for worker_id in range(self._thread_limit)
+        ]
+        for thread in self._threads:
+            thread.start()
 
     def stop(self, *args, **kwargs) -> None:
         self._stop_event.set()
@@ -368,27 +359,50 @@ class DefaultSessionProcessor(SessionProcessorBase):
         # the next step boundary instead of running to completion. Without this, the generation
         # thread may still be executing CUDA operations when Python teardown begins, which can
         # cause a C++ std::terminate() crash ("terminate called without an active exception").
-        self._cancel_event.set()
+        with self._worker_lock:
+            for cancel_event in self._cancel_events.values():
+                cancel_event.set()
         # Wake the thread if it is sleeping in poll_now_event.wait() or blocked in resume_event.wait() (paused).
-        self._poll_now_event.set()
+        self._poll_now()
         self._resume_event.set()
+        for thread in self._threads:
+            thread.join(timeout=5)
 
     def _poll_now(self) -> None:
-        self._poll_now_event.set()
+        for poll_now_event in self._poll_now_events:
+            poll_now_event.set()
 
     async def _on_queue_cleared(self, event: FastAPIEvent[QueueClearedEvent]) -> None:
-        if self._queue_item and self._queue_item.queue_id == event[1].queue_id:
-            self._cancel_event.set()
+        candidate_item_ids: list[int] = []
+        with self._worker_lock:
+            queue_items = list(self._queue_items.items())
+
+        for item_id, queue_item in queue_items:
+            if queue_item.queue_id != event[1].queue_id:
+                continue
+            try:
+                current_queue_item = self._invoker.services.session_queue.get_queue_item(item_id)
+                if current_queue_item.status in ["completed", "failed", "canceled"]:
+                    candidate_item_ids.append(item_id)
+            except SessionQueueItemNotFoundError:
+                candidate_item_ids.append(item_id)
+
+        with self._worker_lock:
+            cancel_events = [
+                self._cancel_events[item_id] for item_id in candidate_item_ids if item_id in self._cancel_events
+            ]
+        for cancel_event in cancel_events:
+            cancel_event.set()
+        if cancel_events:
             self._poll_now()
 
     async def _on_batch_enqueued(self, event: FastAPIEvent[BatchEnqueuedEvent]) -> None:
         self._poll_now()
 
     async def _on_queue_item_status_changed(self, event: FastAPIEvent[QueueItemStatusChangedEvent]) -> None:
-        # Make sure the cancel event is for the currently processing queue item
-        if self._queue_item and self._queue_item.item_id != event[1].item_id:
-            return
-        if self._queue_item and event[1].status in ["completed", "failed", "canceled"]:
+        with self._worker_lock:
+            cancel_event = self._cancel_events.get(event[1].item_id)
+        if cancel_event is not None and event[1].status in ["completed", "failed", "canceled"]:
             # When the queue item is canceled via HTTP, the queue item status is set to `"canceled"` and this event is
             # emitted. We need to respond to this event and stop graph execution. This is done by setting the cancel
             # event, which the session runner checks between invocations. If set, the session runner loop is broken.
@@ -397,7 +411,7 @@ class DefaultSessionProcessor(SessionProcessorBase):
             # node, but it gets a step callback, called on each step of denoising. This callback checks if the queue item
             # is canceled, and if it is, raises a `CanceledException` to stop execution immediately.
             if event[1].status == "canceled":
-                self._cancel_event.set()
+                cancel_event.set()
             self._poll_now()
 
     def resume(self) -> SessionProcessorStatus:
@@ -411,21 +425,27 @@ class DefaultSessionProcessor(SessionProcessorBase):
         return self.get_status()
 
     def get_status(self) -> SessionProcessorStatus:
+        with self._worker_lock:
+            active_count = len(self._queue_items)
         return SessionProcessorStatus(
             is_started=self._resume_event.is_set(),
-            is_processing=self._queue_item is not None,
+            is_processing=active_count > 0,
+            active_count=active_count,
+            concurrency=self._thread_limit,
         )
 
     def _process(
         self,
+        worker_id: int,
         stop_event: ThreadEvent,
         poll_now_event: ThreadEvent,
         resume_event: ThreadEvent,
-        cancel_event: ThreadEvent,
     ):
+        queue_item: Optional[SessionQueueItem] = None
+        cancel_event = ThreadEvent()
+        session_runner = self._build_session_runner(worker_id=worker_id, cancel_event=cancel_event)
         try:
             # Any unhandled exception in this block is a fatal processor error and will stop the processor.
-            self._thread_semaphore.acquire()
             stop_event.clear()
             resume_event.set()
             cancel_event.clear()
@@ -436,11 +456,13 @@ class DefaultSessionProcessor(SessionProcessorBase):
                     # Any unhandled exception in this block is a nonfatal processor error and will be handled.
                     # If we are paused, wait for resume event
                     resume_event.wait()
+                    if stop_event.is_set():
+                        break
 
                     # Get the next session to process
-                    self._queue_item = self._invoker.services.session_queue.dequeue()
+                    queue_item = self._invoker.services.session_queue.dequeue()
 
-                    if self._queue_item is None:
+                    if queue_item is None:
                         # The queue was empty, wait for next polling interval or event to try again
                         self._invoker.services.logger.debug("Waiting for next polling interval or event")
                         poll_now_event.wait(self._polling_interval)
@@ -452,24 +474,37 @@ class DefaultSessionProcessor(SessionProcessorBase):
                     # allocation is well worth it.
                     gc.collect()
 
-                    self._invoker.services.logger.info(
-                        f"Executing queue item {self._queue_item.item_id}, session {self._queue_item.session_id}"
-                    )
                     cancel_event.clear()
+                    with self._worker_lock:
+                        self._queue_items[queue_item.item_id] = queue_item
+                        self._cancel_events[queue_item.item_id] = cancel_event
+
+                    self._invoker.services.logger.info(
+                        f"Executing queue item {queue_item.item_id}, session {queue_item.session_id}"
+                    )
 
                     # Run the graph
-                    self.session_runner.run(queue_item=self._queue_item)
+                    session_runner.run(queue_item=queue_item)
+                    with self._worker_lock:
+                        self._queue_items.pop(queue_item.item_id, None)
+                        self._cancel_events.pop(queue_item.item_id, None)
+                    queue_item = None
 
                 except Exception as e:
                     error_type = e.__class__.__name__
                     error_message = str(e)
                     error_traceback = traceback.format_exc()
                     self._on_non_fatal_processor_error(
-                        queue_item=self._queue_item,
+                        queue_item=queue_item,
                         error_type=error_type,
                         error_message=error_message,
                         error_traceback=error_traceback,
                     )
+                    if queue_item is not None:
+                        with self._worker_lock:
+                            self._queue_items.pop(queue_item.item_id, None)
+                            self._cancel_events.pop(queue_item.item_id, None)
+                        queue_item = None
                     # Wait for next polling interval or event to try again
                     poll_now_event.wait(self._polling_interval)
                     continue
@@ -482,10 +517,33 @@ class DefaultSessionProcessor(SessionProcessorBase):
             self._invoker.services.logger.error(error_traceback)
             pass
         finally:
-            stop_event.clear()
-            poll_now_event.clear()
-            self._queue_item = None
-            self._thread_semaphore.release()
+            if queue_item is not None:
+                with self._worker_lock:
+                    self._queue_items.pop(queue_item.item_id, None)
+                    self._cancel_events.pop(queue_item.item_id, None)
+
+    def _build_session_runner(self, worker_id: int, cancel_event: ThreadEvent) -> SessionRunnerBase:
+        if self._session_runner is not None and self._thread_limit == 1:
+            session_runner = self._session_runner
+        else:
+            session_runner = self._session_runner_factory()
+
+        profiler = (
+            Profiler(
+                logger=self._invoker.services.logger,
+                output_dir=self._invoker.services.configuration.profiles_path,
+                prefix=self._build_profile_prefix(worker_id),
+            )
+            if self._invoker.services.configuration.profile_graphs
+            else None
+        )
+        session_runner.start(services=self._invoker.services, cancel_event=cancel_event, profiler=profiler)
+        return session_runner
+
+    def _build_profile_prefix(self, worker_id: int) -> Optional[str]:
+        prefix = self._invoker.services.configuration.profile_prefix
+        worker_prefix = f"worker_{worker_id}"
+        return f"{prefix}_{worker_prefix}" if prefix else worker_prefix
 
     def _on_non_fatal_processor_error(
         self,
