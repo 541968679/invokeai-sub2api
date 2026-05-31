@@ -182,8 +182,9 @@ class SessionQueueBase(ABC):
         self,
         queue_id: str,
         destination: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> list[SessionQueueItem]:
-        """Gets all queue items that match the given parameters"""
+        """Gets all queue items that match the given parameters. If user_id is provided, only returns that user's items."""
         pass
 
     @abstractmethod

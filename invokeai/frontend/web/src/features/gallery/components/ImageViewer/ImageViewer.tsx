@@ -4,6 +4,7 @@ import { setComparisonImageDndTarget } from 'features/dnd/dnd';
 import { DndDropTarget } from 'features/dnd/DndDropTarget';
 import { CurrentImagePreview } from 'features/gallery/components/ImageViewer/CurrentImagePreview';
 import { selectLastSelectedItem } from 'features/gallery/store/gallerySelectors';
+import { GenerationQueueTasks } from 'features/queue/components/GenerationQueueTasks';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useImageDTO } from 'services/api/endpoints/images';
@@ -21,6 +22,7 @@ export const ImageViewer = memo(() => {
     <Flex flexDir="column" w="full" h="full" overflow="hidden" gap={2} position="relative">
       <ImageViewerToolbar />
       <Divider />
+      <GenerationQueueTasks />
       <Flex w="full" h="full" position="relative">
         <CurrentImagePreview imageDTO={lastSelectedImageDTO} />
         <DndDropTarget

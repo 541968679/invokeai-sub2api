@@ -5,7 +5,9 @@ import { zPydanticValidationError } from 'features/system/store/zodSchemas';
 import { toast } from 'features/toast/toast';
 import { t } from 'i18next';
 import { serializeError } from 'serialize-error';
+import { LIST_ALL_TAG } from 'services/api';
 import { queueApi } from 'services/api/endpoints/queue';
+import type { S } from 'services/api/types';
 import type { JsonObject } from 'type-fest';
 
 const log = logger('queue');
@@ -14,7 +16,7 @@ export const addBatchEnqueuedListener = (startAppListening: AppStartListening) =
   // success
   startAppListening({
     matcher: queueApi.endpoints.enqueueBatch.matchFulfilled,
-    effect: (action) => {
+    effect: async (action, { dispatch }) => {
       const enqueueResult = action.payload;
       const arg = action.meta.arg.originalArgs;
       log.debug({ enqueueResult } as JsonObject, 'Batch enqueued');
@@ -28,6 +30,37 @@ export const addBatchEnqueuedListener = (startAppListening: AppStartListening) =
           direction: arg.prepend ? t('queue.front') : t('queue.back'),
         }),
       });
+
+      if (!enqueueResult.item_ids.length) {
+        return;
+      }
+
+      try {
+        const queueItems = await dispatch(
+          queueApi.endpoints.getQueueItemDTOsByItemIds.initiate({ item_ids: enqueueResult.item_ids }, { track: false })
+        ).unwrap();
+
+        dispatch(
+          queueApi.util.updateQueryData('listAllQueueItems', undefined, (draft) => {
+            mergeQueueItemsIntoDraft(draft, queueItems);
+          })
+        );
+
+        const destination = arg.batch.destination;
+        if (destination) {
+          dispatch(
+            queueApi.util.updateQueryData('listAllQueueItems', { destination }, (draft) => {
+              mergeQueueItemsIntoDraft(
+                draft,
+                queueItems.filter((item) => item.destination === destination)
+              );
+            })
+          );
+        }
+      } catch (error) {
+        log.debug({ error: serializeError(error) } as JsonObject, 'Failed to hydrate enqueued queue items');
+        dispatch(queueApi.util.invalidateTags([{ type: 'SessionQueueItem', id: LIST_ALL_TAG }]));
+      }
     },
   });
 
@@ -71,4 +104,17 @@ export const addBatchEnqueuedListener = (startAppListening: AppStartListening) =
       log.error({ batchConfig, error: serializeError(response) } as JsonObject, t('queue.batchFailedToQueue'));
     },
   });
+};
+
+const mergeQueueItemsIntoDraft = (draft: S['SessionQueueItem'][], queueItems: S['SessionQueueItem'][]) => {
+  for (const queueItem of queueItems) {
+    const existingIndex = draft.findIndex((item) => item.item_id === queueItem.item_id);
+    if (existingIndex >= 0) {
+      draft[existingIndex] = queueItem;
+    } else {
+      draft.unshift(queueItem);
+    }
+  }
+
+  draft.sort((a, b) => b.item_id - a.item_id);
 };

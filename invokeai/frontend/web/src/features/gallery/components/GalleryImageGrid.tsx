@@ -16,8 +16,8 @@ import { useRegisteredHotkeys } from 'features/system/components/HotkeysModal/us
 import { navigationApi } from 'features/ui/layouts/navigation-api';
 import { VIEWER_PANEL_ID } from 'features/ui/layouts/shared';
 import { selectActiveTab } from 'features/ui/store/uiSelectors';
-import type { MutableRefObject } from 'react';
-import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { MutableRefObject, RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   GridComponents,
@@ -29,21 +29,28 @@ import type {
 } from 'react-virtuoso';
 import { VirtuosoGrid } from 'react-virtuoso';
 import { imagesApi, useImageDTO, useStarImagesMutation, useUnstarImagesMutation } from 'services/api/endpoints/images';
+import type { S } from 'services/api/types';
 import { useDebounce } from 'use-debounce';
 
 import { getItemIndex } from './getItemIndex';
 import { getItemsPerRow } from './getItemsPerRow';
 import { GalleryImage, GalleryImagePlaceholder } from './ImageGrid/GalleryImage';
+import { GalleryQueuePlaceholder } from './ImageGrid/GalleryQueuePlaceholder';
 import { GallerySelectionCountTag } from './ImageGrid/GallerySelectionCountTag';
 import { scrollIntoView } from './scrollIntoView';
 import { useGalleryImageNames } from './use-gallery-image-names';
+import { useGalleryQueuePlaceholders } from './use-gallery-queue-placeholders';
 import { useScrollableGallery } from './useScrollableGallery';
 
 type ListImageNamesQueryArgs = ReturnType<typeof selectGetImageNamesQueryArgs>;
+type GalleryGridItem =
+  | { type: 'image'; imageName: string }
+  | { type: 'queue-placeholder'; item: S['SessionQueueItem'] };
 
 type GridContext = {
   queryArgs: ListImageNamesQueryArgs;
   imageNames: string[];
+  now: number;
 };
 
 /**
@@ -80,8 +87,19 @@ const ImageAtPosition = memo(({ imageName }: { index: number; imageName: string 
 });
 ImageAtPosition.displayName = 'ImageAtPosition';
 
-const computeItemKey: GridComputeItemKey<string, GridContext> = (index, imageName, { queryArgs }) => {
-  return `${JSON.stringify(queryArgs)}-${imageName ?? index}`;
+const GalleryItemAtPosition = memo(({ item, now }: { index: number; item: GalleryGridItem; now: number }) => {
+  if (item.type === 'queue-placeholder') {
+    return <GalleryQueuePlaceholder item={item.item} now={now} />;
+  }
+  return <ImageAtPosition index={0} imageName={item.imageName} />;
+});
+GalleryItemAtPosition.displayName = 'GalleryItemAtPosition';
+
+const computeItemKey: GridComputeItemKey<GalleryGridItem, GridContext> = (index, item, { queryArgs }) => {
+  if (item.type === 'queue-placeholder') {
+    return `queue-placeholder-${item.item.item_id}`;
+  }
+  return `${JSON.stringify(queryArgs)}-${item.imageName ?? index}`;
 };
 
 const canHandleGridArrowNavigation = (
@@ -106,8 +124,8 @@ const canHandleGridArrowNavigation = (
  */
 const useKeyboardNavigation = (
   navigationImageNames: string[],
-  virtuosoRef: React.RefObject<VirtuosoGridHandle>,
-  rootRef: React.RefObject<HTMLDivElement>
+  virtuosoRef: RefObject<VirtuosoGridHandle>,
+  rootRef: RefObject<HTMLDivElement>
 ) => {
   const { dispatch, getState } = useAppStore();
   const activeTab = useAppSelector(selectActiveTab);
@@ -280,8 +298,8 @@ const useKeyboardNavigation = (
  */
 const useKeepSelectedImageInView = (
   imageNames: string[],
-  virtuosoRef: React.RefObject<VirtuosoGridHandle>,
-  rootRef: React.RefObject<HTMLDivElement>,
+  virtuosoRef: RefObject<VirtuosoGridHandle>,
+  rootRef: RefObject<HTMLDivElement>,
   rangeRef: MutableRefObject<ListRange>
 ) => {
   const selection = useAppSelector(selectSelection);
@@ -342,7 +360,7 @@ type GalleryImageGridContentProps = {
   navigationImageNames?: string[];
   isLoading: boolean;
   queryArgs: ListImageNamesQueryArgs;
-  rootRef?: React.RefObject<HTMLDivElement>;
+  rootRef?: RefObject<HTMLDivElement>;
 };
 
 export const GalleryImageGridContent = memo(
@@ -352,6 +370,14 @@ export const GalleryImageGridContent = memo(
     const rangeRef = useRef<ListRange>({ startIndex: 0, endIndex: 0 });
     const internalRootRef = useRef<HTMLDivElement>(null);
     const rootRef = rootRefProp ?? internalRootRef;
+    const { placeholders, now } = useGalleryQueuePlaceholders();
+    const galleryItems = useMemo<GalleryGridItem[]>(
+      () => [
+        ...placeholders.map((item) => ({ type: 'queue-placeholder' as const, item })),
+        ...imageNames.map((imageName) => ({ type: 'image' as const, imageName })),
+      ],
+      [imageNames, placeholders]
+    );
 
     // Use range-based fetching for bulk loading image DTOs into cache based on the visible range
     const { onRangeChanged } = useRangeBasedImageFetching({
@@ -371,12 +397,15 @@ export const GalleryImageGridContent = memo(
     const handleRangeChanged = useCallback(
       (range: ListRange) => {
         rangeRef.current = range;
-        onRangeChanged(range);
+        onRangeChanged({
+          startIndex: Math.max(0, range.startIndex - placeholders.length),
+          endIndex: Math.max(0, range.endIndex - placeholders.length),
+        });
       },
-      [onRangeChanged]
+      [onRangeChanged, placeholders.length]
     );
 
-    const context = useMemo<GridContext>(() => ({ imageNames, queryArgs }), [imageNames, queryArgs]);
+    const context = useMemo<GridContext>(() => ({ imageNames, now, queryArgs }), [imageNames, now, queryArgs]);
 
     if (isLoading) {
       return (
@@ -387,7 +416,7 @@ export const GalleryImageGridContent = memo(
       );
     }
 
-    if (imageNames.length === 0) {
+    if (galleryItems.length === 0) {
       return (
         <Flex w="full" h="full" alignItems="center" justifyContent="center">
           <Text color="base.300">{t('gallery.noImagesFound')}</Text>
@@ -398,10 +427,10 @@ export const GalleryImageGridContent = memo(
     return (
       // This wrapper component is necessary to initialize the overlay scrollbars!
       <Box data-overlayscrollbars-initialize="" ref={rootRef} position="relative" w="full" h="full">
-        <VirtuosoGrid<string, GridContext>
+        <VirtuosoGrid<GalleryGridItem, GridContext>
           ref={virtuosoRef}
           context={context}
-          data={imageNames}
+          data={galleryItems}
           increaseViewportBy={4096}
           itemContent={itemContent}
           computeItemKey={computeItemKey}
@@ -452,8 +481,8 @@ const ListComponent: GridComponents<GridContext>['List'] = forwardRef(({ context
 });
 ListComponent.displayName = 'ListComponent';
 
-const itemContent: GridItemContent<string, GridContext> = (index, imageName) => {
-  return <ImageAtPosition index={index} imageName={imageName} />;
+const itemContent: GridItemContent<GalleryGridItem, GridContext> = (index, item, { now }) => {
+  return <GalleryItemAtPosition index={index} item={item} now={now} />;
 };
 
 const ItemComponent: GridComponents<GridContext>['Item'] = forwardRef(({ context: _, ...rest }, ref) => (

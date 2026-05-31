@@ -991,6 +991,38 @@ class TestSessionQueueAuth:
         r = client.get("/api/v1/queue/default/counts_by_destination?destination=canvas")
         assert r.status_code == status.HTTP_401_UNAUTHORIZED
 
+    def test_list_all_requires_auth(self, enable_multiuser: Any, client: TestClient):
+        r = client.get("/api/v1/queue/default/list_all")
+        assert r.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_list_all_filters_by_current_user(
+        self, client: TestClient, mock_invoker: Invoker, user1_token: str
+    ) -> None:
+        mock_session_queue = MagicMock()
+        mock_session_queue.list_all_queue_items.return_value = []
+        mock_invoker.services.session_queue = mock_session_queue
+
+        r = client.get("/api/v1/queue/default/list_all", headers=_auth(user1_token))
+
+        assert r.status_code == status.HTTP_200_OK
+        _, kwargs = mock_session_queue.list_all_queue_items.call_args
+        assert kwargs["queue_id"] == "default"
+        assert kwargs["destination"] is None
+        assert kwargs["user_id"] not in (None, "system")
+
+    def test_list_all_admin_can_query_all_users(
+        self, client: TestClient, mock_invoker: Invoker, admin_token: str
+    ) -> None:
+        mock_session_queue = MagicMock()
+        mock_session_queue.list_all_queue_items.return_value = []
+        mock_invoker.services.session_queue = mock_session_queue
+
+        r = client.get("/api/v1/queue/default/list_all", headers=_auth(admin_token))
+
+        assert r.status_code == status.HTTP_200_OK
+        _, kwargs = mock_session_queue.list_all_queue_items.call_args
+        assert kwargs["user_id"] is None
+
 
 # ===========================================================================
 # 6b. Session queue sanitization (cross-user isolation)

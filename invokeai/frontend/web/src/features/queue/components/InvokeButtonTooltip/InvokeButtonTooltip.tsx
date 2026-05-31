@@ -3,7 +3,7 @@ import { Divider, Flex, ListItem, Text, Tooltip, UnorderedList } from '@invoke-a
 import { useStore } from '@nanostores/react';
 import { useAppDispatch, useAppSelector } from 'app/store/storeHooks';
 import { debounce } from 'es-toolkit/compat';
-import { selectIterations } from 'features/controlLayers/store/paramsSlice';
+import { selectIsExternal, selectIterations } from 'features/controlLayers/store/paramsSlice';
 import { selectDynamicPromptsIsLoading } from 'features/dynamicPrompts/store/dynamicPromptsSlice';
 import { selectAutoAddBoardId } from 'features/gallery/store/gallerySelectors';
 import { selectNodesSlice } from 'features/nodes/store/selectors';
@@ -123,14 +123,18 @@ const QueueCountPredictionCanvasOrUpscaleTab = memo(() => {
   const { t } = useTranslation();
   const promptsCount = useAppSelector(selectPromptsCount);
   const iterationsCount = useAppSelector(selectIterations);
+  const isExternal = useAppSelector(selectIsExternal);
 
   const text = useMemo(() => {
     const generationCount = Math.min(promptsCount * iterationsCount, 10000);
     const prompts = t('queue.prompts', { count: promptsCount });
-    const iterations = t('queue.iterations', { count: iterationsCount });
+    const iterations = isExternal
+      ? t('queue.images', { count: iterationsCount })
+      : t('queue.iterations', { count: iterationsCount });
     const generations = t('queue.generations', { count: generationCount });
-    return `${promptsCount} ${prompts} \u00d7 ${iterationsCount} ${iterations} -> ${generationCount} ${generations}`.toLowerCase();
-  }, [iterationsCount, promptsCount, t]);
+    const suffix = isExternal ? ` (${t('queue.apiRequestTasks', { count: generationCount })})` : '';
+    return `${promptsCount} ${prompts} \u00d7 ${iterationsCount} ${iterations} -> ${generationCount} ${generations}${suffix}`.toLowerCase();
+  }, [isExternal, iterationsCount, promptsCount, t]);
 
   return <Text>{text}</Text>;
 });

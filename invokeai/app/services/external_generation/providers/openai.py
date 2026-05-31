@@ -20,6 +20,8 @@ from invokeai.app.services.external_generation.external_generation_common import
 from invokeai.app.services.external_generation.image_utils import decode_image_base64
 from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfigService
 
+OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS = 420
+
 
 class OpenAIProvider(ExternalProvider):
     provider_id = "openai"
@@ -86,7 +88,7 @@ class OpenAIProvider(ExternalProvider):
                 f"{base_url}/v1/images/generations",
                 headers=headers,
                 json=payload,
-                timeout=120,
+                timeout=OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS,
             )
         else:
             images: list[PILImageType] = []
@@ -134,7 +136,7 @@ class OpenAIProvider(ExternalProvider):
                 headers=headers,
                 data=data,
                 files=files,
-                timeout=120,
+                timeout=OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS,
             )
 
         if not response.ok:

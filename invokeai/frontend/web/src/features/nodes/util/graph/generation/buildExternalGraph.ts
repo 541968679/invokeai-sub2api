@@ -72,6 +72,7 @@ export const buildExternalGraph = async (arg: GraphBuilderArg): Promise<GraphBui
     model: model as unknown as ModelIdentifierField,
     mode: requestedMode,
     image_size: params.imageSize ?? null,
+    // Multi-image external generation is represented as multiple queue items, not multiple images in one API request.
     num_images: 1,
   };
 

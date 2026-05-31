@@ -12,7 +12,10 @@ from invokeai.app.services.external_generation.external_generation_common import
 )
 from invokeai.app.services.external_generation.image_utils import decode_image_base64, encode_image_base64
 from invokeai.app.services.external_generation.providers.gemini import GeminiProvider
-from invokeai.app.services.external_generation.providers.openai import OpenAIProvider
+from invokeai.app.services.external_generation.providers.openai import (
+    OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS,
+    OpenAIProvider,
+)
 from invokeai.app.services.user_external_provider_configs import UserExternalProviderConfig
 from invokeai.backend.model_manager.configs.external_api import ExternalApiModelConfig, ExternalModelCapabilities
 
@@ -247,6 +250,7 @@ def test_openai_generate_txt2img_success(monkeypatch: pytest.MonkeyPatch) -> Non
         captured["url"] = url
         captured["headers"] = headers
         captured["json"] = json
+        captured["timeout"] = timeout
         response = DummyResponse(ok=True, json_data={"data": [{"b64_json": encoded}]})
         response.headers["x-request-id"] = "req-123"
         return response
@@ -262,6 +266,7 @@ def test_openai_generate_txt2img_success(monkeypatch: pytest.MonkeyPatch) -> Non
     json_payload = captured["json"]
     assert isinstance(json_payload, dict)
     assert json_payload["prompt"] == request.prompt
+    assert captured["timeout"] == OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS
     assert result.provider_request_id == "req-123"
     assert result.images[0].seed == request.seed
     assert decode_image_base64(encoded).size == result.images[0].image.size
@@ -383,6 +388,7 @@ def test_openai_generate_inpaint_uses_edit_endpoint(monkeypatch: pytest.MonkeyPa
         captured["url"] = url
         captured["data"] = data
         captured["files"] = files
+        captured["timeout"] = timeout
         response = DummyResponse(ok=True, json_data={"data": [{"b64_json": encoded}]})
         return response
 
@@ -394,6 +400,7 @@ def test_openai_generate_inpaint_uses_edit_endpoint(monkeypatch: pytest.MonkeyPa
     data_payload = captured["data"]
     assert isinstance(data_payload, dict)
     assert data_payload["prompt"] == request.prompt
+    assert captured["timeout"] == OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS
     files = captured["files"]
     assert isinstance(files, list)
     image_file = next((file for file in files if file[0] == "image"), None)

@@ -117,11 +117,13 @@ async def list_all_queue_items(
     queue_id: str = Path(description="The queue id to perform this operation on"),
     destination: Optional[str] = Query(default=None, description="The destination of queue items to fetch"),
 ) -> list[SessionQueueItem]:
-    """Gets all queue items"""
+    """Gets all queue items. Non-admin users only see their own items."""
     try:
+        user_id = None if current_user.is_admin else current_user.user_id
         items = ApiDependencies.invoker.services.session_queue.list_all_queue_items(
             queue_id=queue_id,
             destination=destination,
+            user_id=user_id,
         )
         # Sanitize items for non-admin users
         return [sanitize_queue_item_for_user(item, current_user.user_id, current_user.is_admin) for item in items]
