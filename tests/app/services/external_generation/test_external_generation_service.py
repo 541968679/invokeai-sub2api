@@ -250,7 +250,7 @@ def test_generate_preserves_user_id_when_refreshing_model_capabilities() -> None
             "capabilities": ExternalModelCapabilities(
                 modes=["txt2img"],
                 supports_seed=True,
-            )
+            ),
         }
     )
     request = _build_request(model=request_model, seed=42)
