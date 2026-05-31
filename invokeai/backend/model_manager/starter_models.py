@@ -1348,12 +1348,7 @@ alibabacloud_qwen_image_edit_max = StarterModel(
     default_settings=ExternalApiModelDefaultSettings(width=2048, height=2048, num_images=1),
     panel_schema=ExternalModelPanelSchema(prompts=[{"name": "reference_images"}], image=[{"name": "dimensions"}]),
 )
-OPENAI_GPT_IMAGE_ASPECT_RATIOS = ["1:1", "3:2", "2:3"]
-OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES = {
-    "1:1": ExternalImageSize(width=1024, height=1024),
-    "3:2": ExternalImageSize(width=1536, height=1024),
-    "2:3": ExternalImageSize(width=1024, height=1536),
-}
+OPENAI_GPT_IMAGE_MAX_SIZE = ExternalImageSize(width=4096, height=4096)
 OPENAI_GPT_IMAGE_PANEL_SCHEMA = ExternalModelPanelSchema(
     prompts=[{"name": "reference_images"}], image=[{"name": "dimensions"}]
 )
@@ -1369,8 +1364,7 @@ openai_gpt_image_2 = StarterModel(
         modes=["txt2img", "img2img"],
         supports_reference_images=True,
         max_images_per_request=10,
-        allowed_aspect_ratios=OPENAI_GPT_IMAGE_ASPECT_RATIOS,
-        aspect_ratio_sizes=OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES,
+        max_image_size=OPENAI_GPT_IMAGE_MAX_SIZE,
     ),
     default_settings=ExternalApiModelDefaultSettings(width=1024, height=1024, num_images=1),
     panel_schema=OPENAI_GPT_IMAGE_PANEL_SCHEMA,
@@ -1386,8 +1380,7 @@ openai_gpt_image_1_5 = StarterModel(
         modes=["txt2img", "img2img"],
         supports_reference_images=True,
         max_images_per_request=10,
-        allowed_aspect_ratios=OPENAI_GPT_IMAGE_ASPECT_RATIOS,
-        aspect_ratio_sizes=OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES,
+        max_image_size=OPENAI_GPT_IMAGE_MAX_SIZE,
     ),
     default_settings=ExternalApiModelDefaultSettings(width=1024, height=1024, num_images=1),
     panel_schema=OPENAI_GPT_IMAGE_PANEL_SCHEMA,
@@ -1403,8 +1396,7 @@ openai_gpt_image_1 = StarterModel(
         modes=["txt2img", "img2img"],
         supports_reference_images=True,
         max_images_per_request=10,
-        allowed_aspect_ratios=OPENAI_GPT_IMAGE_ASPECT_RATIOS,
-        aspect_ratio_sizes=OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES,
+        max_image_size=OPENAI_GPT_IMAGE_MAX_SIZE,
     ),
     default_settings=ExternalApiModelDefaultSettings(width=1024, height=1024, num_images=1),
     panel_schema=OPENAI_GPT_IMAGE_PANEL_SCHEMA,
@@ -1420,8 +1412,7 @@ openai_gpt_image_1_mini = StarterModel(
         modes=["txt2img", "img2img"],
         supports_reference_images=True,
         max_images_per_request=10,
-        allowed_aspect_ratios=OPENAI_GPT_IMAGE_ASPECT_RATIOS,
-        aspect_ratio_sizes=OPENAI_GPT_IMAGE_ASPECT_RATIO_SIZES,
+        max_image_size=OPENAI_GPT_IMAGE_MAX_SIZE,
     ),
     default_settings=ExternalApiModelDefaultSettings(width=1024, height=1024, num_images=1),
     panel_schema=OPENAI_GPT_IMAGE_PANEL_SCHEMA,

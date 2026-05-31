@@ -140,6 +140,40 @@ def test_model_manager_external_starter_model_applies_panel_schema_overrides(
     assert payload["panel_schema"]["generation"] == []
 
 
+def test_model_manager_openai_gpt_image_2_starter_model_allows_custom_dimensions(
+    monkeypatch: Any, client: TestClient, mm2_model_manager: Any, mm2_app_config: Any
+) -> None:
+    config = ExternalApiModelConfig(
+        key="external_openai_gpt_image_2",
+        name="GPT Image 2",
+        provider_id="openai",
+        provider_model_id="gpt-image-2",
+        capabilities=ExternalModelCapabilities(
+            modes=["txt2img"],
+            allowed_aspect_ratios=["1:1"],
+        ),
+        source="external://openai/gpt-image-2",
+    )
+    mm2_model_manager.store.add_model(config)
+
+    services = type("Services", (), {})()
+    services.model_manager = mm2_model_manager
+    services.model_images = DummyModelImages()
+    services.configuration = mm2_app_config
+
+    invoker = DummyInvoker(services)
+    monkeypatch.setattr("invokeai.app.api.routers.model_manager.ApiDependencies", MockApiDependencies(invoker))
+
+    response = client.get("/api/v2/models/i/external_openai_gpt_image_2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["capabilities"]["max_image_size"] == {"width": 4096, "height": 4096}
+    assert payload["capabilities"]["allowed_aspect_ratios"] is None
+    assert payload["capabilities"]["aspect_ratio_sizes"] is None
+    assert payload["capabilities"]["resolution_presets"] is None
+
+
 def test_model_manager_gemini_starter_model_applies_reference_and_resolution_overrides(
     monkeypatch: Any, client: TestClient, mm2_model_manager: Any, mm2_app_config: Any
 ) -> None:

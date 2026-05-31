@@ -15,6 +15,7 @@ import {
   selectModelSupportsRefImages,
   selectModelSupportsSeed,
   selectModelSupportsSteps,
+  selectHasFixedDimensionSizes,
 } from './paramsSlice';
 import { getInitialParamsState } from './types';
 
@@ -131,6 +132,19 @@ describe('paramsSlice selectors for external models', () => {
     expect(selectModelSupportsSeed.resultFunc(model, config)).toBe(false);
     expect(selectModelSupportsSteps.resultFunc(model)).toBe(false);
     expect(selectModelSupportsDimensions.resultFunc(model, config)).toBe(true);
+  });
+
+  it('does not lock dimensions when an external model exposes only a maximum image size', () => {
+    expect(selectHasFixedDimensionSizes.resultFunc(null, null)).toBe(false);
+  });
+
+  it('locks dimensions for external models with fixed size presets', () => {
+    expect(selectHasFixedDimensionSizes.resultFunc({ '1:1': { width: 1024, height: 1024 } }, null)).toBe(true);
+    expect(
+      selectHasFixedDimensionSizes.resultFunc(null, [
+        { label: '1:1 (1K)', aspect_ratio: '1:1', image_size: '1K', width: 1024, height: 1024 },
+      ])
+    ).toBe(true);
   });
 });
 

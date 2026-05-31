@@ -214,6 +214,25 @@ def test_generate_validates_allowed_aspect_ratios_with_bucket_sizes() -> None:
     assert provider.last_request.height == 768
 
 
+def test_generate_preserves_custom_size_without_fixed_aspect_ratio_sizes() -> None:
+    model = _build_model(
+        ExternalModelCapabilities(
+            modes=["txt2img"],
+            max_image_size=ExternalImageSize(width=4096, height=4096),
+        )
+    )
+    request = _build_request(model=model, width=1440, height=2560)
+    provider = DummyProvider("openai", configured=True, result=ExternalGenerationResult(images=[]))
+    service = ExternalGenerationService({"openai": provider}, logging.getLogger("test"))
+
+    response = service.generate(request)
+
+    assert response.images == []
+    assert provider.last_request is not None
+    assert provider.last_request.width == 1440
+    assert provider.last_request.height == 2560
+
+
 def test_generate_happy_path() -> None:
     model = _build_model(ExternalModelCapabilities(modes=["txt2img"], supports_seed=True))
     request = _build_request(model=model, seed=42)
