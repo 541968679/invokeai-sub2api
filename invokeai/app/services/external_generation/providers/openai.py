@@ -26,7 +26,7 @@ OPENAI_IMAGE_REQUEST_TIMEOUT_SECONDS = 420
 class OpenAIProvider(ExternalProvider):
     provider_id = "openai"
 
-    _GPT_IMAGE_MODELS = {"gpt-image-1", "gpt-image-1.5", "gpt-image-1-mini"}
+    _GPT_IMAGE_MODELS = {"gpt-image-1", "gpt-image-1.5", "gpt-image-1-mini", "gpt-image-2"}
 
     def __init__(
         self,

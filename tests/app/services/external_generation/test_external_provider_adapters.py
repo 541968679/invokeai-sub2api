@@ -272,6 +272,31 @@ def test_openai_generate_txt2img_success(monkeypatch: pytest.MonkeyPatch) -> Non
     assert decode_image_base64(encoded).size == result.images[0].image.size
 
 
+def test_openai_generate_gpt_image_2_uses_gpt_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = InvokeAIAppConfig(external_openai_api_key="openai-key")
+    provider = OpenAIProvider(config, logging.getLogger("test"))
+    model = _build_model("openai", "gpt-image-2")
+    request = _build_request(model)
+    encoded = encode_image_base64(_make_image("purple"))
+    captured: dict[str, object] = {}
+
+    def fake_post(url: str, headers: dict, json: dict, timeout: int) -> DummyResponse:
+        captured["url"] = url
+        captured["json"] = json
+        return DummyResponse(ok=True, json_data={"data": [{"b64_json": encoded}]})
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    provider.generate(request)
+
+    assert captured["url"] == "https://api.openai.com/v1/images/generations"
+    json_payload = captured["json"]
+    assert isinstance(json_payload, dict)
+    assert json_payload["model"] == "gpt-image-2"
+    assert json_payload["output_format"] == "png"
+    assert "response_format" not in json_payload
+
+
 def test_openai_generate_uses_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     config = InvokeAIAppConfig(
         external_openai_api_key="openai-key",
