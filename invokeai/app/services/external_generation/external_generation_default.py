@@ -191,21 +191,7 @@ class ExternalGenerationService(ExternalGenerationServiceBase):
         if record == request.model:
             return request
 
-        return ExternalGenerationRequest(
-            model=record,
-            mode=request.mode,
-            prompt=request.prompt,
-            seed=request.seed,
-            num_images=request.num_images,
-            width=request.width,
-            height=request.height,
-            image_size=request.image_size,
-            init_image=request.init_image,
-            mask_image=request.mask_image,
-            reference_images=request.reference_images,
-            metadata=request.metadata,
-            provider_options=request.provider_options,
-        )
+        return dataclasses.replace(request, model=record)
 
     def _bucket_request(self, request: ExternalGenerationRequest) -> ExternalGenerationRequest:
         capabilities = request.model.capabilities
@@ -260,20 +246,12 @@ class ExternalGenerationService(ExternalGenerationServiceBase):
             ratio,
         )
 
-        return ExternalGenerationRequest(
-            model=request.model,
-            mode=request.mode,
-            prompt=request.prompt,
-            seed=request.seed,
-            num_images=request.num_images,
+        return dataclasses.replace(
+            request,
             width=width,
             height=height,
-            image_size=request.image_size,
             init_image=_resize_image(request.init_image, width, height, "RGB"),
             mask_image=_resize_image(request.mask_image, width, height, "L"),
-            reference_images=request.reference_images,
-            metadata=request.metadata,
-            provider_options=request.provider_options,
         )
 
 

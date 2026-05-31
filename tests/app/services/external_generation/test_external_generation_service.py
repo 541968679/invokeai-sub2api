@@ -41,6 +41,15 @@ class DummyProvider(ExternalProvider):
         return self._result
 
 
+class DummyRecordStore:
+    def __init__(self, model: ExternalApiModelConfig) -> None:
+        self._model = model
+
+    def get_model(self, key: str) -> ExternalApiModelConfig:
+        assert key == self._model.key
+        return self._model
+
+
 def _build_model(capabilities: ExternalModelCapabilities) -> ExternalApiModelConfig:
     return ExternalApiModelConfig(
         key="external_test",
@@ -231,6 +240,59 @@ def test_generate_preserves_custom_size_without_fixed_aspect_ratio_sizes() -> No
     assert provider.last_request is not None
     assert provider.last_request.width == 1440
     assert provider.last_request.height == 2560
+
+
+def test_generate_preserves_user_id_when_refreshing_model_capabilities() -> None:
+    request_model = _build_model(ExternalModelCapabilities(modes=["txt2img"]))
+    refreshed_model = request_model.model_copy(
+        update={
+            "name": "Refreshed External Test",
+            "capabilities": ExternalModelCapabilities(
+                modes=["txt2img"],
+                supports_seed=True,
+            )
+        }
+    )
+    request = _build_request(model=request_model, seed=42)
+    request = request.__class__(**{**request.__dict__, "user_id": "user-123"})
+    result = ExternalGenerationResult(images=[])
+    provider = DummyProvider("openai", configured=True, result=result)
+    service = ExternalGenerationService(
+        {"openai": provider},
+        logging.getLogger("test"),
+        record_store=DummyRecordStore(refreshed_model),  # type: ignore[arg-type]
+    )
+
+    response = service.generate(request)
+
+    assert response is result
+    assert provider.last_request is not None
+    assert provider.last_request.model.key == refreshed_model.key
+    assert provider.last_request.model.name == "Refreshed External Test"
+    assert provider.last_request.user_id == "user-123"
+
+
+def test_generate_preserves_user_id_when_bucketizing_request() -> None:
+    model = _build_model(
+        ExternalModelCapabilities(
+            modes=["txt2img"],
+            allowed_aspect_ratios=["1:1"],
+            aspect_ratio_sizes={"1:1": ExternalImageSize(width=1024, height=1024)},
+        )
+    )
+    request = _build_request(model=model, width=64, height=64)
+    request = request.__class__(**{**request.__dict__, "user_id": "user-123"})
+    result = ExternalGenerationResult(images=[])
+    provider = DummyProvider("openai", configured=True, result=result)
+    service = ExternalGenerationService({"openai": provider}, logging.getLogger("test"))
+
+    response = service.generate(request)
+
+    assert response is result
+    assert provider.last_request is not None
+    assert provider.last_request.width == 1024
+    assert provider.last_request.height == 1024
+    assert provider.last_request.user_id == "user-123"
 
 
 def test_generate_happy_path() -> None:
